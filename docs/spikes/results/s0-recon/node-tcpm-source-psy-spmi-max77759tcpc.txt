@@ -1,0 +1,1 @@
+/sys/class/power_supply/tcpm-source-psy-spmi-max77759tcpc/*=

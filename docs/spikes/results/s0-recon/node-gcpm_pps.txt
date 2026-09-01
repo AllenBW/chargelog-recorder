@@ -1,0 +1,23 @@
+/sys/class/power_supply/gcpm_pps/current_max=0
+/sys/class/power_supply/gcpm_pps/current_now=0
+/sys/class/power_supply/gcpm_pps/device=
+/sys/class/power_supply/gcpm_pps/of_node=
+/sys/class/power_supply/gcpm_pps/online=0
+/sys/class/power_supply/gcpm_pps/power=
+/sys/class/power_supply/gcpm_pps/present=0
+/sys/class/power_supply/gcpm_pps/subsystem=
+/sys/class/power_supply/gcpm_pps/type=Unknown
+/sys/class/power_supply/gcpm_pps/uevent=DEVTYPE=power_supply
+OF_NAME=google,cpm
+OF_FULLNAME=/google,cpm
+OF_COMPATIBLE_0=google,cpm
+OF_COMPATIBLE_N=1
+POWER_SUPPLY_NAME=gcpm_pps
+POWER_SUPPLY_TYPE=Unknown
+POWER_SUPPLY_VOLTAGE_MAX=0
+POWER_SUPPL
+/sys/class/power_supply/gcpm_pps/usb_type=[Unknown] PD_PPS
+/sys/class/power_supply/gcpm_pps/voltage_max=0
+/sys/class/power_supply/gcpm_pps/voltage_min=0
+/sys/class/power_supply/gcpm_pps/voltage_now=0
+/sys/class/power_supply/gcpm_pps/wakeup54=

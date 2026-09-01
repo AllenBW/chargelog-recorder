@@ -1,0 +1,39 @@
+32240.505218000 reboot-issued
+32248.852668000 adb-wait-for-device-start
+32257.496744000 adb-reconnected
+32262.650912000 logcat-capture-started
+32268.133909000 boot-completed
+32292.596143000 prime-unplug
+32294.703028000 toggle-plug 1
+32300.771368000 toggle-unplug 1
+32301.166777000 ce-unlock-proxy
+32305.258269000 toggle-plug 2
+32311.321655000 toggle-unplug 2
+32315.543715000 toggle-plug 3
+32321.618068000 toggle-unplug 3
+32325.787115000 toggle-plug 4
+32331.962700000 toggle-unplug 4
+32336.205359000 toggle-plug 5
+32342.306557000 toggle-unplug 5
+32346.538082000 toggle-plug 6
+32352.681023000 toggle-unplug 6
+32356.864514000 toggle-plug 7
+32362.940719000 toggle-unplug 7
+32367.164688000 toggle-plug 8
+32373.287242000 toggle-unplug 8
+32377.500872000 toggle-plug 9
+32383.637100000 toggle-unplug 9
+32387.806919000 toggle-plug 10
+32393.892927000 toggle-unplug 10
+32398.062733000 toggle-plug 11
+32404.161792000 toggle-unplug 11
+32408.388602000 toggle-plug 12
+32414.509039000 toggle-unplug 12
+32418.687717000 toggle-plug 13
+32424.831190000 toggle-unplug 13
+32428.988271000 toggle-plug 14
+32435.112537000 toggle-unplug 14
+32439.348351000 toggle-plug 15
+32445.470813000 toggle-unplug 15
+32449.740204000 dead-window-loop-ended-max-attempts
+32449.856150000 battery-reset-applied

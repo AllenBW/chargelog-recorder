@@ -1,0 +1,30 @@
+/sys/class/power_supply/dualbatt/capacity=83
+/sys/class/power_supply/dualbatt/charge_counter=4015000
+/sys/class/power_supply/dualbatt/charge_full=4890000
+/sys/class/power_supply/dualbatt/charge_full_design=4890000
+/sys/class/power_supply/dualbatt/current_avg=1866926
+/sys/class/power_supply/dualbatt/current_now=1908593
+/sys/class/power_supply/dualbatt/dbatt_stats=
+90, 81.10,34460,252, 225,0,0, 252,268,277, -138,402,471, 0,2817,3000
+91, 80.84,61952,243, 225,0,0, 243,254,265, -695,1476,1707, 0,2817,3000
+/sys/class/power_supply/dualbatt/device=
+/sys/class/power_supply/dualbatt/of_node=
+/sys/class/power_supply/dualbatt/power=
+/sys/class/power_supply/dualbatt/present=1
+/sys/class/power_supply/dualbatt/status=Charging
+/sys/class/power_supply/dualbatt/subsystem=
+/sys/class/power_supply/dualbatt/technology=Li-ion
+/sys/class/power_supply/dualbatt/temp=278
+/sys/class/power_supply/dualbatt/type=Unknown
+/sys/class/power_supply/dualbatt/uevent=DEVTYPE=power_supply
+OF_NAME=google,dual_batt_gauge
+OF_FULLNAME=/google,dual_batt_gauge
+OF_COMPATIBLE_0=google,dual_batt_gauge
+OF_COMPATIBLE_N=1
+POWER_SUPPLY_NAME=dualbatt
+POWER_SUPPLY_TYPE=Unknown
+PO
+/sys/class/power_supply/dualbatt/voltage_avg=4368515
+/sys/class/power_supply/dualbatt/voltage_now=4373632
+/sys/class/power_supply/dualbatt/voltage_ocv=4277030
+/sys/class/power_supply/dualbatt/wakeup8=

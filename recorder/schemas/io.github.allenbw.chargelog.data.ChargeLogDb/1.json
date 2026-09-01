@@ -1,0 +1,181 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "01b1d1503d827d1acdbf8a159e6d26ac",
+    "entities": [
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `startedAtMs` INTEGER NOT NULL, `endedAtMs` INTEGER, `endReason` TEXT, `samplerProfileId` TEXT NOT NULL, `schemaVersion` INTEGER NOT NULL, `startLevel` INTEGER, `endLevel` INTEGER, `startChargeCounterRaw` INTEGER, `endChargeCounterRaw` INTEGER, `sourceFile` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtMs",
+            "columnName": "startedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtMs",
+            "columnName": "endedAtMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endReason",
+            "columnName": "endReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "samplerProfileId",
+            "columnName": "samplerProfileId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schemaVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startLevel",
+            "columnName": "startLevel",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endLevel",
+            "columnName": "endLevel",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "startChargeCounterRaw",
+            "columnName": "startChargeCounterRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endChargeCounterRaw",
+            "columnName": "endChargeCounterRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceFile",
+            "columnName": "sourceFile",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "samples",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` INTEGER NOT NULL, `wallClockMs` INTEGER NOT NULL, `elapsedRealtimeMs` INTEGER NOT NULL, `currentRaw` INTEGER, `chargeCounterRaw` INTEGER, `voltageRaw` INTEGER, `voltageAgeMs` INTEGER, `tempDeciC` INTEGER, `level` INTEGER, `status` INTEGER, `plugged` INTEGER, `maxChargingCurrentRaw` INTEGER, `maxChargingVoltageRaw` INTEGER, `thermalStatus` INTEGER, `screenOn` INTEGER, `hingeDeg` REAL, PRIMARY KEY(`sessionId`, `elapsedRealtimeMs`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wallClockMs",
+            "columnName": "wallClockMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "elapsedRealtimeMs",
+            "columnName": "elapsedRealtimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentRaw",
+            "columnName": "currentRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "chargeCounterRaw",
+            "columnName": "chargeCounterRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "voltageRaw",
+            "columnName": "voltageRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "voltageAgeMs",
+            "columnName": "voltageAgeMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tempDeciC",
+            "columnName": "tempDeciC",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "level",
+            "columnName": "level",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "plugged",
+            "columnName": "plugged",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxChargingCurrentRaw",
+            "columnName": "maxChargingCurrentRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxChargingVoltageRaw",
+            "columnName": "maxChargingVoltageRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "thermalStatus",
+            "columnName": "thermalStatus",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "screenOn",
+            "columnName": "screenOn",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hingeDeg",
+            "columnName": "hingeDeg",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "elapsedRealtimeMs"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '01b1d1503d827d1acdbf8a159e6d26ac')"
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+/sys/class/power_supply/wlcin-pe26100/*=

@@ -1,0 +1,63 @@
+{"y":"e","t":17868281,"e":0,"kind":"service_start","detail":"hinge=Hinge Angle Sensor (wake-up) (wake-up)"}
+{"y":"e","t":19021514,"e":1153233,"kind":"service_start","detail":"hinge=Hinge Angle Sensor (wake-up) (wake-up)"}
+{"y":"e","t":20725739,"e":2857458,"kind":"boot"}
+{"y":"e","t":20725940,"e":2857659,"kind":"service_start","detail":"hinge=Hinge Angle Sensor (wake-up) (wake-up)"}
+{"y":"e","t":20738111,"e":2869830,"kind":"boot"}
+{"y":"e","t":20738182,"e":2869901,"kind":"service_start","detail":"hinge=Hinge Angle Sensor (wake-up) (wake-up)"}
+{"y":"e","t":21353919,"e":3485638,"kind":"power_connected"}
+{"y":"e","t":21364135,"e":3495854,"kind":"power_connected"}
+{"y":"e","t":21374347,"e":3506066,"kind":"power_connected"}
+{"y":"e","t":21384564,"e":3516283,"kind":"power_connected"}
+{"y":"e","t":21394781,"e":3526500,"kind":"power_connected"}
+{"y":"e","t":21405002,"e":3536721,"kind":"power_connected"}
+{"y":"e","t":21412725,"e":3544444,"kind":"service_start","detail":"hinge=Hinge Angle Sensor (wake-up) (wake-up)"}
+{"y":"e","t":21412774,"e":3544493,"kind":"hinge","detail":"deg=0.0"}
+{"y":"e","t":21412776,"e":3544495,"kind":"thermal","detail":"status=0"}
+{"y":"e","t":21415236,"e":3546955,"kind":"power_connected"}
+{"y":"e","t":21425450,"e":3557170,"kind":"power_connected"}
+{"y":"e","t":21435706,"e":3567425,"kind":"power_connected"}
+{"y":"e","t":21445962,"e":3577681,"kind":"power_connected"}
+{"y":"e","t":21456186,"e":3587906,"kind":"power_connected"}
+{"y":"e","t":21466465,"e":3598184,"kind":"power_connected"}
+{"y":"e","t":21476719,"e":3608438,"kind":"power_connected"}
+{"y":"e","t":21486970,"e":3618689,"kind":"power_connected"}
+{"y":"e","t":21497195,"e":3628915,"kind":"power_connected"}
+{"y":"e","t":21507420,"e":3639139,"kind":"power_connected"}
+{"y":"e","t":21517694,"e":3649413,"kind":"power_connected"}
+{"y":"e","t":21527911,"e":3659630,"kind":"power_connected"}
+{"y":"e","t":21538136,"e":3669856,"kind":"power_connected"}
+{"y":"e","t":21548371,"e":3680090,"kind":"power_connected"}
+{"y":"e","t":21558610,"e":3690330,"kind":"power_connected"}
+{"y":"e","t":21568885,"e":3700604,"kind":"power_connected"}
+{"y":"e","t":21579122,"e":3710841,"kind":"power_connected"}
+{"y":"e","t":21589353,"e":3721073,"kind":"power_connected"}
+{"y":"e","t":21599636,"e":3731355,"kind":"power_connected"}
+{"y":"e","t":21609907,"e":3741626,"kind":"power_connected"}
+{"y":"e","t":21620134,"e":3751853,"kind":"power_connected"}
+{"y":"e","t":21630345,"e":3762064,"kind":"power_connected"}
+{"y":"e","t":21640576,"e":3772295,"kind":"power_connected"}
+{"y":"e","t":21650818,"e":3782537,"kind":"power_connected"}
+{"y":"e","t":21661035,"e":3792754,"kind":"power_connected"}
+{"y":"e","t":21671192,"e":3802911,"kind":"power_connected"}
+{"y":"e","t":21681382,"e":3813102,"kind":"power_connected"}
+{"y":"e","t":21691627,"e":3823346,"kind":"power_connected"}
+{"y":"e","t":21701929,"e":3833648,"kind":"power_connected"}
+{"y":"e","t":21712142,"e":3843862,"kind":"power_connected"}
+{"y":"e","t":21722395,"e":3854114,"kind":"power_connected"}
+{"y":"e","t":21732665,"e":3864384,"kind":"power_connected"}
+{"y":"e","t":21742878,"e":3874597,"kind":"power_connected"}
+{"y":"e","t":21753101,"e":3884820,"kind":"power_connected"}
+{"y":"e","t":21763322,"e":3895041,"kind":"power_connected"}
+{"y":"e","t":21773564,"e":3905283,"kind":"power_connected"}
+{"y":"e","t":21783884,"e":3915603,"kind":"power_connected"}
+{"y":"e","t":21794146,"e":3925866,"kind":"power_connected"}
+{"y":"e","t":21804341,"e":3936060,"kind":"power_connected"}
+{"y":"e","t":21814529,"e":3946248,"kind":"power_connected"}
+{"y":"e","t":21824729,"e":3956448,"kind":"power_connected"}
+{"y":"e","t":21834917,"e":3966636,"kind":"power_connected"}
+{"y":"e","t":21842465,"e":3974184,"kind":"service_start","detail":"hinge=Hinge Angle Sensor (wake-up) (wake-up)"}
+{"y":"e","t":21842501,"e":3974220,"kind":"hinge","detail":"deg=0.0"}
+{"y":"e","t":21842503,"e":3974222,"kind":"thermal","detail":"status=0"}
+{"y":"e","t":21845112,"e":3976832,"kind":"power_connected"}
+{"y":"e","t":21855270,"e":3986989,"kind":"power_connected"}
+{"y":"e","t":21865447,"e":3997167,"kind":"power_connected"}

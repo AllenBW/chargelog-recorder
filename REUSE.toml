@@ -1,0 +1,42 @@
+version = 1
+
+[[annotations]]
+path = ["recorder/schemas/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 BluffWorks LLC"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = ["recorder/src/testFixtures/resources/corpus/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 BluffWorks LLC"
+SPDX-License-Identifier = "CC0-1.0"
+
+# Curated device evidence (§8.2 of the split design): raw sysfs dumps, host timestamps and NDJSON
+# session logs pulled from real hardware during the S0/S1 spikes. Same rationale as the corpus
+# fixtures above — CC0-1.0, and annotated here rather than headered inline, because many of these
+# are raw data files (.ndjson, .txt device output) where an injected comment would corrupt the
+# format or misrepresent the file as something the recorder itself produced with a license notice
+# baked in. The four spike protocol docs and the NDJSON format note (docs/*.md, docs/spikes/*.md)
+# are prose, not evidence, and carry their own inline GPL-3.0-only headers like the furniture
+# docs below — this pattern does not cover them.
+[[annotations]]
+path = ["docs/spikes/results/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 BluffWorks LLC"
+SPDX-License-Identifier = "CC0-1.0"
+
+# The five public-repo furniture docs (README, BUILDING, CONTRIBUTING, TRADEMARKS, CLA) carry
+# their own inline SPDX HTML-comment headers directly — no annotation needed here. Unlike the
+# private root's aggregate "*.md" pattern (which covers docs that carry no header of their own),
+# these travel as standalone files once mirrored to the public repo, so the license info needs to
+# live in the files themselves rather than in a REUSE.toml a mirror step might not carry over.
+
+# Gradle wrapper binary + properties for the standalone build, copied from the root wrapper.
+# gradlew/gradlew.bat are not annotated here: like the root's, they carry Gradle's own inline
+# "SPDX-License-Identifier: Apache-2.0" header and need no external annotation.
+[[annotations]]
+path = ["gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Gradle Inc."
+SPDX-License-Identifier = "Apache-2.0"

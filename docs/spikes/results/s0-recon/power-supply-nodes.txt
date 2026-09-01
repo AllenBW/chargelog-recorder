@@ -1,0 +1,17 @@
+battery
+dualbatt
+gcpm
+gcpm_pps
+main-charger
+maxfg_base
+maxfg_secondary
+pe26100-buck-charger
+pe26100-cp-mains
+tcpm-source-psy-spmi-max77759tcpc
+usb
+vimon
+wireless
+wlcin-mains
+wlcin-max77779
+wlcin-pe26100
+wlcin-pe26100-cp

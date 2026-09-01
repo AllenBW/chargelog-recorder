@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 BluffWorks LLC
+# SPDX-License-Identifier: GPL-3.0-only
+
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/AllenBW/chargelog-recorder/security/advisories/new
+    about: Report privately through a GitHub security advisory, never as a public issue. See SECURITY.md.
+  - name: Contributing a device session as a fixture
+    url: https://github.com/AllenBW/chargelog-recorder#contributing-device-evidence
+    about: Fixtures arrive as pull requests under CC0-1.0 — read what a session log contains first.
+  - name: Trademark, licensing, or CLA question
+    url: https://github.com/AllenBW/chargelog-recorder/issues/new
+    about: Open an ordinary issue; see TRADEMARKS.md and CLA.md.

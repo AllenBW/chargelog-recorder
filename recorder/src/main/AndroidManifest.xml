@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 BluffWorks LLC
+SPDX-License-Identifier: GPL-3.0-only
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The recorder's complete permission set: exactly what this library's own code needs, and
+         nothing else. Deliberately no INTERNET.
+
+         REQUEST_IGNORE_BATTERY_OPTIMIZATIONS deliberately is NOT here. No code in :recorder
+         requests a battery-optimization exemption; only a host's onboarding does, and a manifest
+         in a library merges into every app that embeds it — so declaring it here made every
+         integrator inherit a permission they never asked for, visible on their Play listing. A
+         host that wants the exemption prompt declares it in its own manifest (app/ does); a host
+         that must not ask for it (Wear OS has no handler for the intent) simply says nothing. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application>
+        <!-- Fully qualified: this module's namespace is not the Kotlin package. -->
+        <service
+            android:name="io.github.allenbw.chargelog.capture.RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <!-- This justification is ChargeLog's, written for ChargeLog's own Play review, and
+                 a library manifest merges into every app that embeds it. An integrator who ships
+                 without changing it files a declaration about their app in words they did not
+                 write and may not be able to stand behind. Override it — the recipe is in
+                 BUILDING.md, "Invariants":
+
+                   <service android:name="io.github.allenbw.chargelog.capture.RecordingService"
+                            tools:replace="android:foregroundServiceType" ...>
+                     <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                               android:value="@string/your_own_justification"
+                               tools:replace="android:value" />
+
+                 It stays here rather than being blanked because a specialUse service with no
+                 subtype property is a Play policy violation on its own, so an empty default
+                 would fail an integrator who never read this comment — which is the failure
+                 that matters more. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Continuous battery charging-session measurement while the device is plugged in; sessions are user-visible recordings analyzed on-device." />
+        </service>
+
+        <receiver
+            android:name="io.github.allenbw.chargelog.capture.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

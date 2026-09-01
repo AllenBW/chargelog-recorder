@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 BluffWorks LLC
+SPDX-License-Identifier: GPL-3.0-only
+-->
+<resources>
+    <string name="app_name">Recorder Sample</string>
+
+    <string name="channel_recording">Recording</string>
+    <string name="channel_idle">Idle</string>
+    <string name="channel_idle_desc">The line shown between charges. Switch it off to hide it.</string>
+
+    <string name="notif_idle">Idle</string>
+    <string name="notif_recording">Recording — %1$s W</string>
+    <string name="notif_recording_unknown">Recording</string>
+
+    <string name="live_idle">Idle — plug in a charger to start a session</string>
+    <string name="live_recording_pending">Recording — waiting for the first sample</string>
+    <string name="live_recording">Recording · %1$s W · %2$s%% · %3$s</string>
+
+    <string name="sessions">Sessions</string>
+    <string name="no_sessions">No sessions yet. Plug in a charger.</string>
+    <string name="session_line">%1$s · %2$s · %3$s%% → %4$s%%</string>
+    <string name="minutes">%1$d min</string>
+    <string name="share_csv">Share CSV</string>
+    <string name="share_raw">Share NDJSON</string>
+    <string name="share_chooser">Share session</string>
+    <string name="share_missing">That session\'s raw log is no longer on disk.</string>
+    <string name="share_failed">Could not write the file to share.</string>
+    <string name="unknown">—</string>
+</resources>

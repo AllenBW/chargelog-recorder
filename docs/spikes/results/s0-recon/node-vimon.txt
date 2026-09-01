@@ -1,0 +1,15 @@
+/sys/class/power_supply/vimon/device=
+/sys/class/power_supply/vimon/of_node=
+/sys/class/power_supply/vimon/power=
+/sys/class/power_supply/vimon/status=Unknown
+/sys/class/power_supply/vimon/subsystem=
+/sys/class/power_supply/vimon/type=Unknown
+/sys/class/power_supply/vimon/uevent=DEVTYPE=power_supply
+OF_NAME=max77779vimon
+OF_FULLNAME=/spmi@ebf1000/max77779vimon@5
+OF_COMPATIBLE_0=maxim,max77779vimon-spmi
+OF_COMPATIBLE_N=1
+POWER_SUPPLY_NAME=vimon
+POWER_SUPPLY_TYPE=Unknown
+POWER_
+/sys/class/power_supply/vimon/wakeup9=

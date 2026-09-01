@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: 2026 BluffWorks LLC
+# SPDX-License-Identifier: GPL-3.0-only
+
+name: Device quirk
+description: This device or charger reports something the recorder gets wrong
+labels: ["device-quirk"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Device quirks are the whole reason this project exists — fuel gauges that report
+        milliamps where the platform documents microamps, sign flips, `chargeCounter` derived
+        from state-of-charge instead of a real coulomb counter, chargers that enumerate as the
+        wrong source. Thank you for reporting one.
+
+        A session log makes the difference between a guess and a fix. **Before you attach one,
+        please read
+        [what a session log contains](https://github.com/AllenBW/chargelog-recorder#read-this-before-you-attach-a-session-log)**
+        — it carries wall-clock timestamps, a ~1 Hz screen-on/off trace, and a per-install
+        device id.
+
+        A log attached *to an issue* is just evidence for the bug; it is not dedicated to the
+        public domain. Only a log you contribute to the fixture corpus in a pull request is
+        CC0-1.0, and that is permanent.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Marketing name and, if you know it, `ro.product.model`.
+      placeholder: Pixel 9 Pro (GRQ4V)
+    validations:
+      required: true
+
+  - type: input
+    id: android
+    attributes:
+      label: Android / Wear OS version
+      placeholder: Android 16, build BP31.250610.004
+    validations:
+      required: true
+
+  - type: input
+    id: charger
+    attributes:
+      label: Charger and cable
+      description: Wattage and kind, if the quirk depends on them. "Unknown" is a fine answer.
+      placeholder: 45 W USB-C PD, stock cable / Qi pad / pogo dock
+    validations:
+      required: false
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What the recorder reports, and what it should report
+      description: Numbers where you have them — the reading you saw and the reading you expected.
+      placeholder: |
+        currentRaw sits around 2400 during a 25 W charge, so watts comes out ~1000× low.
+        The gauge appears to report mA, not µA.
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Session log
+      description: |
+        Attach the NDJSON (drag it in — GitHub accepts `.txt`, or zip it). To pull one from a
+        debuggable build, from the repository root:
+
+        ```
+        ./gradlew :sample:installDebug
+        # …plug in, let a session complete, unplug…
+        ./scripts/pull-logs.sh          # writes to ./pulled-logs
+        ```
+
+        For a host app other than `:sample`: `PKG=com.example.myapp ./scripts/pull-logs.sh`.
+        See `BUILDING.md`. If you edited the file before attaching it, say what you removed.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read what a session log contains, and I'm comfortable with what I'm attaching (or I'm attaching nothing).
+          required: true

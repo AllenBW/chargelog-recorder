@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: 2026 BluffWorks LLC
+# SPDX-License-Identifier: GPL-3.0-only
+
+name: Bug
+description: Something in the library or the sample doesn't work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the problem is that a *particular device or charger* is measured wrongly, please use
+        the **Device quirk** template instead — it asks for the right things.
+
+        If the problem is security-sensitive, do not open an issue. See `SECURITY.md`.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Module and, if you have it, file or symbol.
+      placeholder: ":recorder — data/Replay.kt, reconcile()"
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit SHA, tag, or "main as of <date>".
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      description: Skip if it isn't device-specific.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Stack trace or logcat
+      description: |
+        Paste it — a code block is fine. Please strip anything you don't want public; logcat
+        from a real device carries other apps' output as well as your own.
+      render: text
+    validations:
+      required: false

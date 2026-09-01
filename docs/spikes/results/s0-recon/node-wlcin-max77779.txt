@@ -1,0 +1,15 @@
+/sys/class/power_supply/wlcin-max77779/constant_charge_current_max=100000
+/sys/class/power_supply/wlcin-max77779/current_max=0
+/sys/class/power_supply/wlcin-max77779/current_now=0
+/sys/class/power_supply/wlcin-max77779/device=
+/sys/class/power_supply/wlcin-max77779/input_current_limit=
+/sys/class/power_supply/wlcin-max77779/of_node=
+/sys/class/power_supply/wlcin-max77779/online=0
+/sys/class/power_supply/wlcin-max77779/power=
+/sys/class/power_supply/wlcin-max77779/present=0
+/sys/class/power_supply/wlcin-max77779/subsystem=
+/sys/class/power_supply/wlcin-max77779/type=Unknown
+/sys/class/power_supply/wlcin-max77779/uevent=
+/sys/class/power_supply/wlcin-max77779/voltage_max=0
+/sys/class/power_supply/wlcin-max77779/voltage_now=0
+/sys/class/power_supply/wlcin-max77779/wakeup14=
