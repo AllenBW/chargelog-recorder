@@ -178,6 +178,10 @@ class RecordingService : Service() {
     @Volatile private var lastNotifiedText: String? = null
     @Volatile private var lastNotifiedAtE: Long = 0
 
+    /** The channel of the last posted notification — the transition detector for
+     *  [updateNotification]'s remove-and-repost path. Null until the first post. */
+    @Volatile private var lastNotifiedChannelId: String? = null
+
     private val thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
         thermalStatus = status
         submit(CaptureInput.Observed(RawLine.Event(
@@ -551,7 +555,21 @@ class RecordingService : Service() {
         if (!force && (key == lastNotifiedText || SystemClock.elapsedRealtime() - lastNotifiedAtE < 5_000)) return
         lastNotifiedText = key
         lastNotifiedAtE = SystemClock.elapsedRealtime()
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, host.build(this, content))
+        val channelChanged = lastNotifiedChannelId != null && lastNotifiedChannelId != content.channelId
+        lastNotifiedChannelId = content.channelId
+        val built = host.build(this, content)
+        if (channelChanged) {
+            // A channel transition (recording <-> idle) is replaced by REMOVAL and a fresh
+            // foreground post, never updated in place. On a watch, the recording notification
+            // carries an ongoing-activity chip on the watch face, and an in-place update that
+            // drops the ongoing state does not tear the chip down — it kept rendering the dead
+            // session's final reading ("100% . 0.8 W") hours after the unplug, seen on the face
+            // on real hardware 2026-09-01. Only a genuine removal clears it. On the phone this
+            // path costs one silent shade re-post per plug/unplug.
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            startForeground(NOTIFICATION_ID, built, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, built)
+        }
     }
 }

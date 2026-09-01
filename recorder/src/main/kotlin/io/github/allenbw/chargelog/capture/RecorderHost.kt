@@ -95,7 +95,7 @@ interface RecorderHost {
      * If you genuinely need to carry something across calls, make it immutable and published
      * safely (`@Volatile`, an `AtomicReference`, a `StateFlow`) — and expect it to be stale, since
      * nothing orders these calls against each other. This is not a theoretical worry: the
-     * concurrency bug in §1 of the S1 analysis (`docs/spikes/results/s1-detection-latency/`) was
+     * concurrency bug found during the 50-trial stress run was
      * this exact mistake, made inside the recorder itself.
      */
     fun content(state: RecorderState): HostContent

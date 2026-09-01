@@ -57,7 +57,7 @@ class DischargeLogTest {
     }
 
     @Test fun `the log compacts to its newest half once it outgrows maxBytes`() {
-        // Nothing else ever prunes this file (S6 §1 defect 6): Retention is session math and
+        // Nothing else ever prunes this file: Retention is session math and
         // delete-all sweeps session files, so the cap is the log's own job. Every line here is a
         // constant 29 bytes ({"t":1000,"e":10,"level":80}\n), so five lines are 145 bytes — under
         // the 150-byte cap — and the sixth append crosses it, compacting to the newest half (3).

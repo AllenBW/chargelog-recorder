@@ -32,7 +32,7 @@ import java.io.File
  * Deliberately Android-free: it takes a plain [File] directory, never a `Context`, so the whole
  * append→read path is JVM unit-testable. The caller supplies the `files/rawlog` directory.
  *
- * Size is this class's own responsibility (S6 §1 defect 6): nothing else ever prunes the file —
+ * Size is this class's own responsibility — nothing else ever prunes the file:
  * `Retention` is session math and delete-all sweeps session files — so once the file outgrows
  * [maxBytes] an append compacts it to its newest half. At ~30–60 lines/day on a phone (2–3× on a
  * watch) the default cap is years of history, and the drain model only ever wants the recent past.
@@ -80,7 +80,7 @@ class DischargeLog(private val dir: File, private val maxBytes: Long = MAX_BYTES
         )
     }
 
-    /** Deletes the log outright — the discharge half of Settings' delete-all (S6 §4.0). */
+    /** Deletes the log outright — the discharge half of a host's delete-all. */
     @Synchronized
     fun clear() {
         file.delete()

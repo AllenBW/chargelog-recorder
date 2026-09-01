@@ -32,6 +32,11 @@ interface CaptureDao {
     @Query("SELECT sourceFile, endReason, deviceId FROM sessions")
     suspend fun fileStates(): List<FileState>
 
+    /** How many sessions this device itself recorded to completion — `deviceId IS NULL` is this
+     *  row's own capture, never one carried in from another device's import. */
+    @Query("SELECT COUNT(*) FROM sessions WHERE endedAtMs IS NOT NULL AND deviceId IS NULL")
+    suspend fun ownCompletedSessionCount(): Int
+
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun session(id: Long): SessionEntity?
 

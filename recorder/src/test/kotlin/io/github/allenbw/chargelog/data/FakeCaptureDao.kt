@@ -40,6 +40,9 @@ internal class FakeCaptureDao : CaptureDao {
     override suspend fun fileStates(): List<FileState> =
         sessions.values.map { FileState(it.sourceFile, it.endReason, it.deviceId) }
 
+    override suspend fun ownCompletedSessionCount(): Int =
+        sessions.values.count { it.endedAtMs != null && it.deviceId == null }
+
     override suspend fun session(id: Long): SessionEntity? = sessions[id]
 
     override suspend fun deleteSessionRow(id: Long) {
