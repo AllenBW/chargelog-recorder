@@ -60,8 +60,6 @@ class IngestTest {
         val r2 = runBlocking { Replay.ingestExternal(text(header(6000L, "a/b")).byteInputStream(), dirs(), dao) }
         assertEquals(IngestResult.Rejected(IngestReasons.INVALID_DEVICE_ID), r1)
         assertEquals(IngestResult.Rejected(IngestReasons.INVALID_DEVICE_ID), r2)
-        // The scratch dir lives beside synced/, not inside it, so a rejection
-        // leaves synced/ untouched — nothing for LogDirs.all() to mistake for a device.
         assertEquals(emptyList<String>(), File(tmp.root, "synced").list()?.toList() ?: emptyList<String>())
     }
 

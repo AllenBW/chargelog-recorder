@@ -35,7 +35,6 @@ class RawLogWriterTest {
         val w = RawLogWriter(tmp.root)
         val f = w.open(header)
         w.append(RawLine.Sample(t = 1, e = 2, level = 50))
-        // no close() — flush-per-write means a crash loses at most nothing
         assertEquals(2, f.readLines().size)
         w.close()
     }
@@ -70,8 +69,62 @@ class RawLogWriterTest {
     fun `event log appends across instances`() {
         EventLog(tmp.root).append(RawLine.Event(t = 1, e = 1, kind = EventKinds.BOOT))
         EventLog(tmp.root).append(RawLine.Event(t = 2, e = 2, kind = EventKinds.SERVICE_START))
-        val lines = java.io.File(tmp.root, "events.ndjson").readLines()
+        val lines = java.io.File(tmp.root, EventLog.FILE_NAME).readLines()
         assertEquals(2, lines.size)
         assertTrue(NdjsonCodec.decode(lines[1]) is RawLine.Event)
+    }
+
+    @Test
+    fun `the event log's file name is exported and is what append writes`() {
+        assertEquals("events.ndjson", EventLog.FILE_NAME)
+        EventLog(tmp.root).append(RawLine.Event(t = 1, e = 1, kind = EventKinds.BOOT))
+        assertTrue(java.io.File(tmp.root, EventLog.FILE_NAME).isFile)
+    }
+
+    /** Delete-all's out-of-session half. The plug/unplug markers are a record of when the owner is
+     *  near a charger, so "remove every log file from this device" has to reach them. */
+    @Test
+    fun `clear deletes the event log`() {
+        val log = EventLog(tmp.root)
+        log.append(RawLine.Event(t = 1, e = 1, kind = EventKinds.BOOT))
+        assertTrue(java.io.File(tmp.root, EventLog.FILE_NAME).isFile)
+        log.clear()
+        assertFalse(java.io.File(tmp.root, EventLog.FILE_NAME).exists())
+    }
+
+    @Test
+    fun `clear also removes a compaction temp file left by a crash`() {
+        java.io.File(tmp.root, "${EventLog.FILE_NAME}.tmp").writeText("{\"y\":\"e\"}\n")
+        EventLog(tmp.root).clear()
+        assertFalse(java.io.File(tmp.root, "${EventLog.FILE_NAME}.tmp").exists())
+    }
+
+    @Test
+    fun `an append past the cap compacts to the newest half and stays parseable`() {
+        val log = EventLog(tmp.root, maxBytes = 512)
+        repeat(60) { log.append(RawLine.Event(t = it.toLong(), e = it.toLong(), kind = EventKinds.BOOT)) }
+        val lines = java.io.File(tmp.root, EventLog.FILE_NAME).readLines().filter { it.isNotBlank() }
+        assertTrue("compaction should have run", lines.size < 60)
+        assertTrue("every surviving line still decodes", lines.all { NdjsonCodec.decode(it) is RawLine.Event })
+        assertEquals(59L, (NdjsonCodec.decode(lines.last()) as RawLine.Event).t)
+    }
+
+    @Test
+    fun `an empty directory clears without throwing`() {
+        EventLog(tmp.root).clear()
+        assertFalse(java.io.File(tmp.root, EventLog.FILE_NAME).exists())
+    }
+
+    @Test
+    fun `close leaves the writer reusable even when the underlying file is gone`() {
+        val w = RawLogWriter(tmp.root)
+        val f = w.open(header)
+        w.append(RawLine.Sample(t = 1, e = 2, level = 50))
+        f.delete()
+        w.close()
+        assertFalse("close must always clear the writer", w.isOpen)
+        val f2 = w.open(header.copy(sessionStartWallClockMs = 99))
+        assertEquals("session-99.ndjson", f2.name)
+        w.close()
     }
 }

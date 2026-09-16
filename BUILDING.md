@@ -72,6 +72,45 @@ Before attaching one of those files to a public issue or PR, read
 timestamps, a 1 Hz screen-state trace, and a per-install device id, and evidence contributed to
 the fixture corpus is dedicated to the public domain irrevocably under CC0-1.0.
 
+## Notifications
+
+The recorder posts its foreground notification under **two** ids, alternating between them on
+every channel change (`NotificationIds`):
+
+- `NotificationIds.PRIMARY` (**1**) — the id the service starts on.
+- `NotificationIds.ALTERNATE` (**8**) — the other one.
+
+Which of the two a given post lands on is not something a host can predict, so **read
+`HostContent.notificationId`** — the recorder sets it on the content it hands to
+`RecorderHost.build`. A host that binds anything to the id, such as a Wear `OngoingActivity`,
+must take it from there and never assume a constant. The recording notification is the one whose
+`channelId` is `NotificationChannels.RECORDING` (`"recording"`); that is the post a watch host
+attaches its watch-face chip to.
+
+A channel change (recording -> idle, or back) has to be a genuine REPLACEMENT of the old
+notification, not an in-place update: on Wear an update that merely drops the ongoing state
+leaves the chip on the watch face rendering a finished session. The replacement is done by
+calling `startForeground` with the *other* id while still foreground, then cancelling the old
+one. `stopForeground` is never called on a transition, and that is deliberate. Leaving the
+foreground drops the service's foreground-start grant, so Android 12+ re-evaluates the
+background-start restriction on the `startForeground` that follows it and throws
+`ForegroundServiceStartNotAllowedException` whenever the app is in the background.
+
+That restriction is not hypothetical for a host on Wear OS: Wear has no user-facing handler for
+the battery-optimization exemption, so a watch host can never hold the allowlist entry that would
+exempt it, and the unplug that ends a charge almost always arrives while the app is backgrounded
+behind the system's charging screen. A phone host whose user declines the exemption prompt is in
+the same position. Verified on the API-36 Wear emulator with the app backgrounded.
+
+**Both ids are reserved.** Ids 1 and 8 belong to the recorder for the lifetime of the service: do
+not post, update or cancel either one from your own code. This is not a style rule — the
+collision is silent and one-sided. Your own `notify()` on a reserved id overwrites whatever the
+recorder has up; your `cancel()` takes down its foreground notification; and an
+`activeNotifications.any { it.id == … }` check of yours reads the recorder's notification as
+*yours*, already posted, so you stop posting. Nothing throws, nothing logs — a notification of
+yours simply never appears again. (ChargeLog shipped exactly this: its low-battery reminder has
+id 2, `ALTERNATE` was briefly 2 as well, and the reminder went silent.)
+
 ## Invariants
 
 - **No resources.** `:recorder` carries no strings, drawables, layouts, or any other Android

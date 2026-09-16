@@ -9,7 +9,10 @@ import io.github.allenbw.chargelog.capture.log.EventLog
 import io.github.allenbw.chargelog.capture.log.NdjsonCodec
 import io.github.allenbw.chargelog.capture.log.RawLine
 import io.github.allenbw.chargelog.capture.log.RawLogWriter
+import io.github.allenbw.chargelog.measure.GaugeProfiles
+import io.github.allenbw.chargelog.measure.Units
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -31,11 +34,6 @@ object EndReasonsForReplay {
  */
 object Replay {
 
-    // Serializes reconcile(), projectAll(), and deleteSessionCompletely()
-    // against each other: all three are suspend/IO-dispatched, and without
-    // this a reconcile or rebuild pass racing a delete could re-upsert rows
-    // for a file the delete just removed (or vice versa), landing the DB in
-    // a state none of the three intended alone.
     private val mutex = Mutex()
 
     data class Parsed(val session: SessionEntity, val samples: List<SampleEntity>)
@@ -44,6 +42,7 @@ object Replay {
         var header: RawLine.Header? = null
         var endEvent: RawLine.Event? = null
         var stopEvent: RawLine.Event? = null
+        var gaugeEvent: RawLine.Event? = null
         val samples = mutableListOf<RawLine.Sample>()
 
         file.forEachLine { raw ->
@@ -55,9 +54,10 @@ object Replay {
                 is RawLine.Event -> when (line.kind) {
                     EventKinds.SESSION_END -> endEvent = line
                     EventKinds.SERVICE_STOP -> stopEvent = line
+                    EventKinds.GAUGE_SCALE -> gaugeEvent = line
                     else -> Unit
                 }
-                null -> Unit // malformed (crash-truncated) line — skip
+                null -> Unit
             }
         }
         val h = header ?: return null
@@ -67,13 +67,6 @@ object Replay {
         val session = SessionEntity(
             id = h.sessionStartWallClockMs,
             startedAtMs = h.sessionStartWallClockMs,
-            // Falls back to the last sample's wall clock when there's no
-            // terminal event at all (TRUNCATED): a pseudo-final duration
-            // beats leaving endedAtMs null, which SessionFilter and the
-            // Sessions list otherwise read as "duration unknown" and hide
-            // or mis-sort — the endReason stays TRUNCATED regardless, so
-            // the badge and reconcile's re-parse-on-TRUNCATED loop are
-            // unaffected.
             endedAtMs = endEvent?.t ?: stopEvent?.t ?: last?.t,
             endReason = when {
                 endEvent != null -> EndReasonsForReplay.CLEAN
@@ -82,27 +75,31 @@ object Replay {
             },
             samplerProfileId = h.samplerProfileId,
             schemaVersion = h.schema,
-            startLevel = first?.level,
-            endLevel = last?.level,
+            startLevel = Units.levelPct(first?.level, first?.scale),
+            endLevel = Units.levelPct(last?.level, last?.scale),
             startChargeCounterRaw = first?.chargeCounterRaw,
             endChargeCounterRaw = last?.chargeCounterRaw,
             sourceFile = file.name,
             deviceKind = h.deviceKind ?: DeviceKinds.PHONE,
             deviceId = h.deviceId,
             deviceModel = h.deviceModel,
-            gaugeProfileId = h.gaugeProfileId,
+            gaugeProfileId = gaugeEvent?.detail
+                ?.substringAfter(EventKinds.GAUGE_SCALE_DETAIL_KEY, "")
+                ?.takeIf { GaugeProfiles.byId(it) != null }
+                ?: h.gaugeProfileId,
             reportsCurrent = h.capabilities?.reportsCurrent,
             counterKind = h.capabilities?.counterKind,
             hasHinge = h.capabilities?.hasHinge,
+            osRelease = h.osRelease,
+            appVersion = h.appVersion,
+            socModel = h.socModel,
+            totalMemBytes = h.totalMemBytes,
+            designCapacityMah = h.designCapacityMah,
+            chargingPositive = h.capabilities?.chargingPositive,
         )
         return Parsed(session, samples.map { it.toEntity(h.sessionStartWallClockMs) })
     }
 
-    /**
-     * True when [p] may be upserted: no row with that id, or a row from the same device. A row
-     * from ANOTHER device means two devices started a session in the same millisecond — the
-     * failure mode is a silent chimera, so the newcomer is skipped and the conflict logged.
-     */
     private suspend fun admit(p: Parsed, dao: CaptureDao, dirs: LogDirs): Boolean {
         val existing = dao.session(p.session.id) ?: return true
         if (existing.deviceId == p.session.deviceId) return true
@@ -126,10 +123,6 @@ object Replay {
             dao.clearAll()
             var count = 0
             for (dir in dirs.all()) for (f in RawLogWriter.sessionFiles(dir)) {
-                // A file can vanish between listFiles() and parse() — e.g. a
-                // delete racing this rebuild — which throws
-                // FileNotFoundException opening the stream; skip rather than
-                // crash the caller's coroutine.
                 val p = try { parse(f) } catch (_: IOException) { null } ?: continue
                 if (!admit(p, dao, dirs)) continue
                 dao.upsertSession(p.session)
@@ -151,17 +144,12 @@ object Replay {
             var count = 0
             for (dir in dirs.all()) {
                 val dirDeviceId = if (dir == dirs.phone) null else dir.name
-                // Known files for THIS directory only: the phone dir holds null/local ids, a synced
-                // dir holds exactly its own id. Same filename in another dir is a collision, handled by admit().
                 val known = states
                     .filter { it.deviceId == dirDeviceId || (dirDeviceId == null && it.deviceId == dirs.localDeviceId) }
                     .associateBy { it.sourceFile }
                 for (f in RawLogWriter.sessionFiles(dir)) {
                     val k = known[f.name]
                     if (k != null && k.endReason != EndReasonsForReplay.TRUNCATED) continue
-                    // A directory can match the session-*.ndjson name filter too (e.g. a
-                    // stray artifact); parse()'s forEachLine would throw opening it as a
-                    // stream — skip rather than crash the whole reconcile pass.
                     val p = try { parse(f) } catch (_: IOException) { null } ?: continue
                     if (!admit(p, dao, dirs)) continue
                     dao.upsertSession(p.session)
@@ -183,10 +171,12 @@ object Replay {
     suspend fun deleteSessionCompletely(dirs: LogDirs, dao: CaptureDao, session: SessionEntity): Boolean =
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                val f = File(dirs.dirFor(session), session.sourceFile)
-                if (f.exists() && !f.delete()) return@withLock false
-                dao.deleteSession(session.id)
-                true
+                withContext(NonCancellable) {
+                    val f = File(dirs.dirFor(session), session.sourceFile)
+                    if (f.exists() && !f.delete()) return@withContext false
+                    dao.deleteSession(session.id)
+                    true
+                }
             }
         }
 
@@ -199,7 +189,7 @@ object Replay {
         voltageRaw = voltageRaw,
         voltageAgeMs = voltageAgeMs,
         tempDeciC = tempDeciC,
-        level = level,
+        level = Units.levelPct(level, scale),
         status = status,
         plugged = plugged,
         maxChargingCurrentRaw = maxChargingCurrentRaw,
@@ -207,5 +197,6 @@ object Replay {
         thermalStatus = thermalStatus,
         screenOn = screenOn,
         hingeDeg = hingeDeg,
+        chargingStatus = chargingStatus,
     )
 }

@@ -15,7 +15,7 @@ import io.github.allenbw.chargelog.data.SampleEntity
  * carried — a consumer that needs them reads the entity.
  */
 data class AnalyzerSample(
-    val eMs: Long,                       // elapsedRealtimeMs
+    val eMs: Long,
     val wallClockMs: Long,
     val currentRaw: Long?,
     val voltageRaw: Int?,
@@ -28,6 +28,9 @@ data class AnalyzerSample(
     val hingeDeg: Float?,
     val screenOn: Boolean?,
     val thermalStatus: Int?,
+    /** The platform's charging attribution (`ChargingStatus`), raw; null when unlabelled. Last
+     *  and defaulted so positional constructions in the analyzer's own tests still compile. */
+    val chargingStatus: Int? = null,
 )
 
 /**
@@ -48,4 +51,5 @@ fun SampleEntity.toAnalyzerSample(): AnalyzerSample =
         hingeDeg = hingeDeg,
         screenOn = screenOn,
         thermalStatus = thermalStatus,
+        chargingStatus = chargingStatus,
     )

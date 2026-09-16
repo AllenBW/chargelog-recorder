@@ -59,8 +59,57 @@ interface RecorderHost {
      *  such table. Defaults to the phone's µA coulomb counter — see the stability rule above. */
     fun gaugeProfile(): GaugeProfile = GaugeProfiles.PHONE
 
+    /**
+     * The recorder resolved something about the gauge that [gaugeProfile]'s table could not: today
+     * only the current SCALE of a [GaugeProfiles.UNKNOWN] watch, which nothing about a
+     * manufacturer implies and only the samples can say.
+     *
+     * Called once, on the recorder's own thread, the first time a session's opening samples
+     * settle it. The recorder has already persisted the answer
+     * ([CapturePrefs.learnedGaugeId]) and every later session it opens uses it, so a host that
+     * does nothing here stays correct — this exists so a host that also READS the gauge (live
+     * watts, its own analysis) can stop being a thousand times wrong before its next process
+     * start, rather than after it.
+     *
+     * Defaults to doing nothing — see the stability rule above.
+     */
+    fun onGaugeRefined(profile: GaugeProfile) = Unit
+
+    /**
+     * This cell's DESIGN capacity in mAh, written into every session header, or null when the
+     * host does not know it.
+     *
+     * The recorder cannot work this out for itself. The kernel holds the true figure at
+     * `/sys/class/power_supply/battery/charge_full_design`, but an unprivileged app is refused it
+     * by SELinux, so the answer lives wherever the host keeps it — a framework `PowerProfile`
+     * read, a value the user typed, or nothing.
+     *
+     * **Why the header and not the reader's own live lookup.** A capacity read at analysis time is
+     * the CURRENT device's, which is wrong for a session that arrived from a paired watch and
+     * wrong for the phone's own history after the reference changes. Recorded per session it stays
+     * the capacity that cell actually had while that charge happened.
+     *
+     * Defaults to null — see the stability rule above. Null is honest: nothing downstream may
+     * substitute a nominal figure for a cell nobody measured.
+     */
+    fun designCapacityMah(): Int? = null
+
     /** User-visible names for the two notification channels; read by [NotificationChannels.ensure]. */
     fun channelLabels(): ChannelLabels
+
+    /**
+     * Whether the person using this device has agreed to recording — for a host with a first-run
+     * flow, whether that flow has been seen. Asked by [BootReceiver] and [PackageReplacedReceiver]
+     * before they start the service: those two are the only start paths a host does not own, and
+     * they used to start the recorder unconditionally, so a host's own consent gate held on
+     * launch and leaked on the next reboot or update. A host's visible-activity start is still
+     * the host's business; this is only the background half of the same gate. Called on the main
+     * thread from a receiver, so keep it to a preference read.
+     *
+     * Defaults to `true` — see the stability rule above: before this member existed the receivers
+     * started on every boot and update, and a host with no consent step keeps exactly that.
+     */
+    fun captureConsented(): Boolean = true
 
     /**
      * Phase 1 — cheap. Called on every state transition and on every sampling tick while
@@ -120,7 +169,15 @@ data class ChannelLabels(val recording: String, val idle: String, val idleDescri
 
 /** Opaque to the recorder except for [dedupeKey] (the gate) and [channelId]. [payload] carries
  *  whatever the host needs to hand from [RecorderHost.content] to [RecorderHost.build]. */
-data class HostContent(val dedupeKey: String, val channelId: String, val payload: Any?)
+data class HostContent(
+    val dedupeKey: String,
+    val channelId: String,
+    val payload: Any?,
+    /** The notification id this content will be posted under — the recorder sets it (it
+     *  alternates on a channel change, see [NotificationIds]); a host that binds something to
+     *  the id, such as a watch's ongoing activity, must read it from here rather than assume. */
+    val notificationId: Int = NotificationIds.PRIMARY,
+)
 
 sealed interface RecorderState {
     /** Not recording. [recap] is the most recently finished session, if any is known. */

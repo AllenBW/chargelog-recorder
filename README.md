@@ -44,9 +44,10 @@ into it; the recorder never reaches into the host.
 fast if the cast doesn't hold.
 
 Embedding the library also merges its manifest into yours: five permissions, the recording
-service, and the boot receiver. One merged value is a claim about your app rather than a
-capability — the `specialUse` foreground-service justification Play requires, which ships with
-ChargeLog's own wording. **Replace it with yours before you submit**; `BUILDING.md` has the
+service, and two receivers: boot, and package-replaced (so the recorder comes back after an
+update). One merged value is a claim about your app rather than a capability — the
+`specialUse` foreground-service justification Play requires, which ships with ChargeLog's own
+wording. **Replace it with yours before you submit**; `BUILDING.md` has the
 `tools:replace` recipe under "Invariants".
 
 ## Quick start
@@ -100,9 +101,14 @@ issue template, which asks for exactly what a quirk report needs.
 
 ## Reporting problems
 
-Bugs and device quirks: open an issue — there are templates for a device-specific quirk report
-and for an ordinary bug. Security-sensitive reports go through GitHub private advisories instead;
-see `SECURITY.md`.
+Bugs and device quirks **in this engine**: open an issue — there are templates for a
+device-specific quirk report and for an ordinary bug. Security-sensitive reports go through
+GitHub private advisories instead; see `SECURITY.md`.
+
+Something wrong with the **ChargeLog app itself** — the phone or watch app, its screens, its
+notifications, its exports — is not an engine issue: it goes to
+[chargelog.org/help](https://chargelog.org/help/), which has the app's contact address. This
+repository holds only the recording half.
 
 ## License
 

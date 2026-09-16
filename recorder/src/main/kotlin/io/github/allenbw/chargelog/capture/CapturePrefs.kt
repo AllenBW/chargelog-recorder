@@ -21,12 +21,11 @@ object CapturePrefs {
 
     private const val KEY_SAMPLE_INTERVAL_S = "sample_interval_s"
     private const val KEY_RECORD_ENABLED = "record_enabled"
+    private const val KEY_LEARNED_GAUGE_ID = "learned_gauge_id"
 
     /** 1 s matches the service's ticker before this setting existed, so it is the default. */
     const val DEFAULT_SAMPLE_INTERVAL_S = 1
 
-    /** Faster than 1 s wastes battery for no analysis benefit; slower than 5 s starts missing
-     *  short charge bursts. */
     private val INTERVAL_STEPS = intArrayOf(1, 2, 5)
 
     private const val DEFAULT_RECORD_ENABLED = true
@@ -54,6 +53,27 @@ object CapturePrefs {
         prefs(context).edit().putBoolean(KEY_RECORD_ENABLED, on).apply()
     }
 
+    /**
+     * A gauge id the recorder RESOLVED from samples, outranking whatever the host's table said —
+     * today only [io.github.allenbw.chargelog.measure.GaugeScaleProbe]'s mA detection, which the
+     * bundled table cannot make because nothing about a manufacturer implies a scale.
+     *
+     * Persisted rather than re-derived: a session header is written at plug-in, before any sample
+     * exists, so the FIRST charge on an unknown watch is the only one that can learn this, and
+     * every charge after it has to be told. Null until something has been learned, which is every
+     * device with a characterized gauge.
+     *
+     * Public because a host reads it too: the recorder's answer is about the instrument, and a
+     * host that renders live watts or analyzes sessions is reading the same instrument
+     * ([io.github.allenbw.chargelog.capture.RecorderHost.onGaugeRefined] is the push half).
+     */
+    fun learnedGaugeId(context: Context): String? =
+        prefs(context).getString(KEY_LEARNED_GAUGE_ID, null)
+
+    fun setLearnedGaugeId(context: Context, id: String) {
+        prefs(context).edit().putString(KEY_LEARNED_GAUGE_ID, id).apply()
+    }
+
     fun sampleIntervalSFlow(context: Context): Flow<Int> = prefsFlow(context) { sampleIntervalS(context) }
 
     fun recordEnabledFlow(context: Context): Flow<Boolean> = prefsFlow(context) { recordEnabled(context) }
@@ -61,8 +81,6 @@ object CapturePrefs {
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    /** Emits the current value, then again on every change to this file. The listener is held
-     *  strongly by the flow for its lifetime (SharedPreferences keeps listeners weakly). */
     private fun <T> prefsFlow(context: Context, read: () -> T): Flow<T> {
         val prefs = prefs(context)
         return callbackFlow {

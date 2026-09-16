@@ -166,7 +166,24 @@ class SessionFactsTest {
         assertEquals(ChargeSource.WIRELESS, facts.source)
     }
 
-    // --- chargeSourceOf (extracted mapping) ---
+    @Test
+    fun `source skips a pre-plug first sample`() {
+        val samples = listOf(
+            sample(elapsedRealtimeMs = 0L, plugged = 0),
+            sample(elapsedRealtimeMs = 1_000L, plugged = 0),
+            sample(elapsedRealtimeMs = 2_000L, plugged = 1),
+        )
+        assertEquals(ChargeSource.WIRED, sessionFacts(session(), samples).source)
+    }
+
+    @Test
+    fun `source is UNKNOWN when no sample ever reports a plug`() {
+        val samples = listOf(
+            sample(elapsedRealtimeMs = 0L, plugged = 0),
+            sample(elapsedRealtimeMs = 1_000L, plugged = null),
+        )
+        assertEquals(ChargeSource.UNKNOWN, sessionFacts(session(), samples).source)
+    }
 
     @Test
     fun `chargeSourceOf is WIRED for plugged 1`() {
@@ -198,8 +215,6 @@ class SessionFactsTest {
         assertEquals(ChargeSource.UNKNOWN, chargeSourceOf(99))
     }
 
-    // --- negotiatedW ---
-
     @Test
     fun `negotiatedW converts uA times uV to watts`() {
         assertEquals(15.0, negotiatedW(3_000_000, 5_000_000)!!, 1e-9)
@@ -219,8 +234,6 @@ class SessionFactsTest {
     fun `negotiatedW is null when both are null`() {
         assertNull(negotiatedW(null, null))
     }
-
-    // --- watch-scale facts ---
 
     @Test fun `a watch session's source is DOCK whatever plugged says`() {
         assertEquals(ChargeSource.WIRED, chargeSourceOf(1))
@@ -252,6 +265,46 @@ class SessionFactsTest {
         val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
         val session = sessionWith(gaugeProfileId = "gauge-unknown-ma", deviceKind = DeviceKinds.WATCH)
         assertEquals(1.4, sessionFacts(session, listOf(s)).peakW!!, 1e-6)
+    }
+
+    @Test fun `an undeclared counter kind resolves through the gauge catalog, a declared one wins`() {
+        // Device pass 2026-09-08: schema-1 headers declare no capabilities, so the row's
+        val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
+        assertEquals("COULOMB", sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).counterKind)
+        assertEquals("SOC_DERIVED", sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), listOf(s)).counterKind)
+        val declared = sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH).copy(counterKind = "COULOMB")
+        assertEquals("COULOMB", sessionFacts(declared, listOf(s)).counterKind)
+        assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-unknown", deviceKind = DeviceKinds.WATCH), listOf(s)).counterKind)
+    }
+
+    @Test fun `the gauge's current scale is carried on the facts, resolved through the catalog`() {
+        // The scale was the one capability `sessionFacts` resolved internally and then threw away,
+        // so every consumer holding a SessionFacts had to re-derive it from the gauge id or — as
+        // Session Detail's efficiency cell and Deep Stats' weekly trend both did — assume microamps
+        // and read a milliamp gauge 1000x low (audit 2026-09-14).
+        val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
+        assertEquals(CurrentScale.MICRO_AMP, sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).currentScale)
+        assertEquals(
+            CurrentScale.MILLI_AMP,
+            sessionFacts(sessionWith(gaugeProfileId = "gauge-sec", deviceKind = DeviceKinds.WATCH), listOf(s)).currentScale,
+        )
+        // An id the catalog has never heard of takes the same microamp fallback the peak watts do.
+        assertEquals(CurrentScale.MICRO_AMP, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).currentScale)
+    }
+
+    @Test fun `an undeclared sign convention resolves through the gauge catalog, a declared one wins`() {
+        // The counterKind rule one line up, applied to the sign: a schema-1 phone file and a
+        // pre-2026-09-08 watch file both declare nothing and both resolve through their gauge.
+        val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
+        assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).chargingPositive)
+        assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
+        val declared = sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH).copy(chargingPositive = false)
+        assertEquals(false, sessionFacts(declared, listOf(s)).chargingPositive)
+        // An unmeasured gauge with no declaration stays honestly null.
+        assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-sec", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
+        assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-unknown", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
+        // An id the catalog has never heard of takes the same PHONE fallback as no id at all.
+        assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).chargingPositive)
     }
 
     private fun sampleWith(currentRaw: Long?, voltageRaw: Int?) = sample(elapsedRealtimeMs = 0L, currentRaw = currentRaw, voltageRaw = voltageRaw)

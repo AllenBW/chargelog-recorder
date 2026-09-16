@@ -10,12 +10,17 @@ import java.util.Random
 /**
  * A per-installation identifier: 16 random bytes, hex, minted once and kept in
  * its own prefs file. It names WHICH device authored a log so the phone hub can keep two devices'
- * sessions apart; it is not tied to hardware identifiers and is never sent anywhere.
+ * sessions apart; it is not tied to hardware identifiers and is never sent to a server. It
+ * appears in every session-log header and, when the user attaches diagnostics on the Help page,
+ * in the support bundle — see `SupportBundle` in the host app. So it is not a secret and not a
+ * tracker, but it is not invisible either: a host whose UI promises otherwise is wrong, and a
+ * host that offers a diagnostics attachment has to say an anonymous per-install id is in it.
  *
  * The app opts out of Auto Backup and device-to-device transfer altogether (`allowBackup="false"`
  * in the manifest — a full-data backup binds an agent into the app process and the backup manager
  * kills that process when it unbinds, foreground service or not), so
- * [FILE] never leaves the device — which is also what identity needs: a restore is a new
+ * [FILE] is never backed up or transferred to another device — which is also what identity
+ * needs: a restore is a new
  * installation, so the new phone must mint its own id. Inheriting the old one would make two live installs claim the same
  * authorship (breaking `reconcile`'s conflict rule) and would make the old phone's own sessions
  * look local on the new one, so importing them would be refused as `LOCAL_DEVICE`. That coupling

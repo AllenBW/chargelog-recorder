@@ -11,7 +11,6 @@ import org.junit.Test
 
 class SettleDetectorTest {
 
-    // 4.0 V nominal: watts = |µA| * mV / 1e9 → 2_000_000 µA ≈ 8 W, 200_000 µA ≈ 0.8 W (10 %), 700_000 ≈ 2.8 W (35 %).
     private fun s(e: Long, level: Int, status: Int, ua: Long) =
         RawLine.Sample(t = e, e = e, currentRaw = ua, voltageRaw = 4000, level = level, status = status)
 
@@ -75,15 +74,14 @@ class SettleDetectorTest {
     fun `hold timer restarts when a non-holding sample interrupts`() {
         val d = SettleDetector()
         val samples = (0..30).map { s(it * 1000L, 80, BatteryStatus.CHARGING, 2_000_000) } +
-            (31..100).map { s(it * 1000L, 100, BatteryStatus.FULL, 50_000) } +      // 70 s of FULL
-            listOf(s(101_000L, 99, BatteryStatus.CHARGING, 2_000_000)) +           // interrupt
-            (102..170).map { s(it * 1000L, 100, BatteryStatus.FULL, 50_000) }       // 69 s more — not 120 contiguous
+            (31..100).map { s(it * 1000L, 100, BatteryStatus.FULL, 50_000) } +
+            listOf(s(101_000L, 99, BatteryStatus.CHARGING, 2_000_000)) +
+            (102..170).map { s(it * 1000L, 100, BatteryStatus.FULL, 50_000) }
         assertEquals(emptyList<SettleDetector.Transition>(), drive(d, samples))
     }
 
     @Test fun `resume threshold is measured in scaled watts`() {
         val d = SettleDetector(scale = CurrentScale.MILLI_AMP)
-        // peak 350 mA; hold at 4 mA FULL → settled; a 200 mA CHARGING sample below the max resumes (> 30 % of peak).
         d.offer(RawLine.Sample(t = 0, e = 0, currentRaw = 350, voltageRaw = 4000, level = 98, status = BatteryStatus.CHARGING), 100)
         var t: SettleDetector.Transition? = null
         for (i in 0..130) t = d.offer(RawLine.Sample(t = 0, e = 1_000L + i * 1_000, currentRaw = 4, voltageRaw = 4000, level = 100, status = BatteryStatus.FULL), 100) ?: t

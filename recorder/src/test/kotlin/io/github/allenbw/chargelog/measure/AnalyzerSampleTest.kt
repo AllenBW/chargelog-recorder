@@ -29,6 +29,7 @@ class AnalyzerSampleTest {
             thermalStatus = 14014,
             screenOn = true,
             hingeDeg = 15015.5f,
+            chargingStatus = 16016,
         )
 
         val sample = entity.toAnalyzerSample()
@@ -46,6 +47,7 @@ class AnalyzerSampleTest {
         assertEquals(15015.5f, sample.hingeDeg!!, 0.001f)
         assertEquals(true, sample.screenOn)
         assertEquals(14014, sample.thermalStatus)
+        assertEquals(16016, sample.chargingStatus)
     }
 
     @Test

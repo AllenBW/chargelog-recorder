@@ -28,6 +28,7 @@ class ExportCsvTest {
         thermalStatus: Int? = null,
         screenOn: Boolean? = null,
         hingeDeg: Float? = null,
+        chargingStatus: Int? = null,
     ) = SampleEntity(
         sessionId = sessionId,
         wallClockMs = wallClockMs,
@@ -45,6 +46,7 @@ class ExportCsvTest {
         thermalStatus = thermalStatus,
         screenOn = screenOn,
         hingeDeg = hingeDeg,
+        chargingStatus = chargingStatus,
     )
 
     private fun session(
@@ -59,6 +61,7 @@ class ExportCsvTest {
         startChargeCounterRaw: Long? = null,
         endChargeCounterRaw: Long? = null,
         sourceFile: String = "session-42.ndjson",
+        gaugeProfileId: String? = null,
     ) = SessionEntity(
         id = id,
         startedAtMs = startedAtMs,
@@ -71,10 +74,11 @@ class ExportCsvTest {
         startChargeCounterRaw = startChargeCounterRaw,
         endChargeCounterRaw = endChargeCounterRaw,
         sourceFile = sourceFile,
+        gaugeProfileId = gaugeProfileId,
     )
 
     private val columnHeader =
-        "elapsed_s,wall_clock_ms,watts,level_pct,temp_c,voltage_mv,current_ua,charge_counter_uah,thermal_status,screen_on,hinge_deg"
+        "elapsed_s,wall_clock_ms,watts,level_pct,temp_c,voltage_mv,current_ua,charge_counter_uah,thermal_status,screen_on,hinge_deg,charging_status"
 
     @Test
     fun `header line contains the honesty phrase`() {
@@ -154,7 +158,6 @@ class ExportCsvTest {
     fun `nullable raw columns render as empty string when null`() {
         val csv = ExportCsv.csv(session(), listOf(sample(elapsedRealtimeMs = 1_000L)), "ChargeLog")
         val row = csv.trimEnd('\n').lines()[2].split(",")
-        // level_pct, voltage_mv, current_ua, charge_counter_uah, thermal_status, screen_on, hinge_deg
         assertEquals("", row[3])
         assertEquals("", row[5])
         assertEquals("", row[6])
@@ -184,5 +187,53 @@ class ExportCsvTest {
     @Test
     fun `suggestedRawName is the session source file`() {
         assertEquals("session-42.ndjson", ExportCsv.suggestedRawName(session(sourceFile = "session-42.ndjson")))
+    }
+
+    @Test
+    fun `charging_status is the last column, empty when the platform did not say`() {
+        val csv = ExportCsv.csv(
+            session(),
+            listOf(sample(elapsedRealtimeMs = 1_000L, chargingStatus = 5), sample(elapsedRealtimeMs = 2_000L)),
+            "ChargeLog",
+        )
+        val rows = csv.trimEnd('\n').lines().drop(2)
+        assertTrue(rows[0], rows[0].endsWith(",5"))
+        assertTrue(rows[1], rows[1].endsWith(","))
+    }
+
+    @Test
+    fun `watts and current_ua are on the session's own gauge scale`() {
+        fun rowFor(gauge: String?): List<String> = ExportCsv.csv(
+            session(gaugeProfileId = gauge),
+            listOf(sample(elapsedRealtimeMs = 1_000L, currentRaw = 1_000L, voltageRaw = 4_200)),
+            "ChargeLog",
+        ).trimEnd('\n').lines().drop(2).single().split(",")
+
+        val phone = rowFor(GaugeProfiles.PHONE.id)   // microamp gauge
+        val watch = rowFor(GaugeProfiles.SEC.id)     // milliamp gauge
+        // watts column (index 2), current_ua column (index 6)
+        assertEquals("0.004", phone[2])
+        assertEquals("4.200", watch[2])
+        assertEquals("1000", phone[6])
+        assertEquals("1000000", watch[6])
+    }
+
+    /** An unknown or absent gauge id keeps the microamp convention every existing file was
+     *  written under, so no already-exported session changes meaning. */
+    @Test
+    fun `an unknown gauge id falls back to microamps`() {
+        val row = ExportCsv.csv(
+            session(gaugeProfileId = null),
+            listOf(sample(elapsedRealtimeMs = 1_000L, currentRaw = 1_000L, voltageRaw = 4_200)),
+            "ChargeLog",
+        ).trimEnd('\n').lines().drop(2).single().split(",")
+        assertEquals("0.004", row[2])
+        assertEquals("1000", row[6])
+    }
+
+    @Test
+    fun `the header names the gauge so the file is self-describing`() {
+        val csv = ExportCsv.csv(session(gaugeProfileId = GaugeProfiles.SEC.id), emptyList(), "ChargeLog")
+        assertTrue(csv, csv.lines().first().contains("gauge ${GaugeProfiles.SEC.id}"))
     }
 }

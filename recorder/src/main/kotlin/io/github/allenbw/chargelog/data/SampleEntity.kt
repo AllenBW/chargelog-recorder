@@ -23,4 +23,7 @@ data class SampleEntity(
     val thermalStatus: Int?,
     val screenOn: Boolean?,
     val hingeDeg: Float?,
+    /** Version 5: the platform's charging attribution (`measure/ChargingStatus`), raw. Null for
+     *  every row recorded before this build and for every sample the platform did not label. */
+    val chargingStatus: Int? = null,
 )

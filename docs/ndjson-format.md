@@ -48,7 +48,10 @@ since boot — the field to use for computing durations and deltas within one bo
 | `deviceKind` *(schema ≥ 2, nullable)* | `"PHONE"` or `"WATCH"`; absent on schema-1 files, which predate multi-form-factor capture and mean PHONE. |
 | `deviceId` *(schema ≥ 2, nullable)* | Opaque per-installation identifier used to keep one device's sessions from merging with another's on ingest — not a hardware serial. |
 | `gaugeProfileId` *(schema ≥ 2, nullable)* | Identifies the fuel-gauge quirk profile applied when interpreting this device's raw readings. |
-| `capabilities` *(schema ≥ 2, nullable)* | An object declaring what this device's gauge provides — `reportsCurrent`, `reportsChargeCounter`, `counterKind` (`"COULOMB"` or `"SOC_DERIVED"`), `hasHinge`, `hasThermal`. Every field is nullable; `null` means "not declared," never "false." Declared once per session so absence is visible at the session level rather than only as per-sample `null`s. |
+| `socModel` *(nullable)* | The system-on-chip name (`Build.SOC_MODEL`), or absent when the platform reports it as unknown. Names the hardware class, not the unit. Added after the first schema-2 builds, so a schema-2 file may lack it. |
+| `designCapacityMah` *(nullable)* | The cell's design capacity in mAh as the host knew it at capture time, or absent when it did not. The recorder cannot read this itself: the kernel's `charge_full_design` is refused to an unprivileged app by SELinux, so the host supplies it (`RecorderHost.designCapacityMah`). Recorded per session so a reader never substitutes the current device's figure for the one that cell actually had. Added after the first schema-2 builds. |
+| `totalMemBytes` *(nullable)* | Kernel-visible total memory in bytes, raw as `ActivityManager.MemoryInfo.totalMem` reports it. With `deviceModel` and `socModel` this identifies the SKU. Added after the first schema-2 builds, so a schema-2 file may lack it. |
+| `capabilities` *(schema ≥ 2, nullable)* | An object declaring what this device's gauge provides — `reportsCurrent`, `reportsChargeCounter`, `counterKind` (`"COULOMB"` or `"SOC_DERIVED"`), `hasHinge`, `hasThermal`, and since 2026-09-08 `reportsChargingStatus` (whether the sticky battery intent carried `android.os.extra.CHARGING_STATUS` at service start) and `chargingPositive` (whether a positive `currentRaw` means charge flowing into the battery — the gauge's sign convention, as the recorder's profile table knew it; absent when unmeasured). Every field is nullable; `null` means "not declared," never "false." Declared once per session so absence is visible at the session level rather than only as per-sample `null`s. |
 
 The header's `t`/`e` are meaningful to code reading a `RawLine` generically (`t` reads as
 `sessionStartWallClockMs`, `e` as `0`) but are not themselves separate keys in the header's own
@@ -79,6 +82,7 @@ what a reader keys that transform on).
 | `thermalStatus` | `PowerManager.THERMAL_STATUS_*` integer. |
 | `screenOn` | Screen state at sample time. |
 | `hingeDeg` | Hinge-angle sensor reading in degrees, on devices with a hinge sensor (see `spikes/S3-hinge.md`). |
+| `chargingStatus` | `BatteryManager.EXTRA_CHARGING_STATUS` integer, the platform's own attribution of how the charge is going: 0 invalid (present but never set by this device's health HAL — read as "no attribution") · 1 normal · 2 too cold · 3 too hot · 4 long life · 5 adaptive (the HAL's `BatteryChargingState`). Absent when the platform did not supply the key. Added 2026-09-08 without a schema bump. |
 
 ## Event (`"y":"e"`) — zero or more per session, plus the rolling `events.ndjson`
 
@@ -97,11 +101,33 @@ worth marking explicitly), `power_connected`, `power_disconnected`, `boot` (an
 this when an app leaves the force-stopped state, so a `boot` line can mean either; the elapsed-time
 field (`e`) is the discriminator, since it resets to near zero across a real reboot but runs
 continuously across a force-stop-exit re-delivery — see `EventKinds.BOOT`'s own KDoc in
-`RawLine.kt`), `service_start`, `service_stop`, `hinge`, `screen_on`, `screen_off`,
-`thermal`, `ingest_conflict` (a session file's id collided with a different device's on ingest —
+`RawLine.kt`), `package_replaced` (an `ACTION_MY_PACKAGE_REPLACED` broadcast was received — the
+app was just updated, and the recorder restarted itself from it), `service_start`,
+`service_stop`, `hinge`, `screen_on`, `screen_off`, `thermal`, `charging_status` (the platform's
+charging attribution changed — `detail` is `"status=N"`, the same numbering as the sample field;
+one line per change, so an Adaptive hold or a thermal pause is findable without scanning samples),
+`ingest_conflict` (a session file's id collided with a different device's on ingest —
 skipped, never merged), `capture_policy` (the sampling policy changed without closing the session:
-`detail` is `"settled"` or `"resumed"`), and `cadence` (the effective sample interval from this
-line forward, so a reader never has to infer it from timestamp deltas alone).
+`detail` is `"settled"` or `"resumed"`), `gauge_scale` (the recorder resolved an unknown gauge's
+current SCALE from this session's own first samples — `detail` is
+`"gaugeProfileId=gauge-unknown-ma"`; see below), and `cadence` (the effective sample interval from
+this line forward, so a reader never has to infer it from timestamp deltas alone).
+
+### `gauge_scale` and a provisional `gaugeProfileId`
+
+A header is written at plug-in, before the session has taken a single sample, so anything the
+samples themselves reveal about the gauge cannot be in it. One thing is: whether a gauge whose
+profile is `gauge-unknown` reports current in µA or mA. Nothing about a manufacturer implies the
+answer, and a wrong one is a factor of a thousand on every current in the file.
+
+So the recorder measures it — the median magnitude of the session's first fifteen non-zero
+charging currents — and when the answer is mA it appends a `gauge_scale` line naming the resolved
+profile. **A reader that sees one must prefer it over the header's `gaugeProfileId`**: the header
+recorded what was assumed, this line records what was measured. There is at most one per file, it
+never appears in a file whose header was already right, and its absence means the header stands.
+
+Every session after the one that learned it simply opens with the resolved profile in its header,
+so this line is rare: at most one file per device ever carries it.
 
 ## Discharge line (`discharge.ndjson`)
 
@@ -135,3 +161,8 @@ has `null` for fields introduced later (`deviceKind`, `deviceId`, `gaugeProfileI
 were all added going from schema 1 to schema 2, for multi-device and multi-form-factor capture).
 The version only needs to bump when a change isn't safely backward-compatible under that
 tolerant-decode contract — a genuinely additive field does not require it.
+
+`socModel`, `totalMemBytes`, `designCapacityMah`, the sample's `chargingStatus` and the capability
+block's `reportsChargingStatus`/`chargingPositive` are the worked example: all were added in
+2026-09 as nullable fields **without** bumping the version, so "schema 2" alone does not tell you whether a file has
+them. Read them as nullable and absence as "not recorded", exactly as for any other optional key.

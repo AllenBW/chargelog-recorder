@@ -10,11 +10,14 @@ import androidx.room3.RoomDatabase
 import androidx.sqlite.driver.AndroidSQLiteDriver
 
 /**
- * Version 2 adds the device columns. Migration is destructive on purpose: this
- * DB is a disposable projection of the raw logs (Replay KDoc), and the launch-time reconcile
- * re-projects every session file it does not know — which, after a drop, is all of them.
+ * Version 2 adds the device columns; version 3 the recording device's own OS release, app
+ * version, chip and memory; version 4 the cell's design capacity; version 5 the platform's
+ * charging attribution per sample and the gauge's sign convention per session. Migration is
+ * destructive on purpose: this DB is a disposable projection of the raw logs (Replay KDoc), and
+ * the launch-time reconcile re-projects every session file it does not know — which, after a
+ * drop, is all of them.
  */
-@Database(entities = [SessionEntity::class, SampleEntity::class], version = 2, exportSchema = true)
+@Database(entities = [SessionEntity::class, SampleEntity::class], version = 5, exportSchema = true)
 abstract class ChargeLogDb : RoomDatabase() {
     abstract fun dao(): CaptureDao
 

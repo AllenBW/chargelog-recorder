@@ -8,6 +8,8 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
 
+private const val APPEND = true
+
 /**
  * Rolling, append-only log of unplugged battery readings — the other half of what this device's
  * battery did. The session log records what happened while the charger was attached; this records
@@ -55,20 +57,14 @@ class DischargeLog(private val dir: File, private val maxBytes: Long = MAX_BYTES
             Line.serializer(),
             Line(t = wallClockMs, e = elapsedMs, level = level, screenOn = screenOn),
         )
-        java.io.FileOutputStream(file, /* append = */ true).use { stream ->
+        java.io.FileOutputStream(file, APPEND).use { stream ->
             stream.write((encoded + "\n").toByteArray(Charsets.UTF_8))
             stream.flush()
-            // Best effort beyond flush, matching RawLogWriter: the write frequency here is low
-            // (one line per level change), so a per-line fsync costs nothing measurable.
-            try { stream.fd.sync() } catch (_: java.io.IOException) { /* flush already happened */ }
+            try { stream.fd.sync() } catch (_: java.io.IOException) { }
         }
         if (file.length() > maxBytes) compact()
     }
 
-    /** Rewrites the file to the newest half of its lines. `length()` is a cheap stat, so the
-     *  common append pays nothing; the rare compaction rewrites at most [maxBytes] of text. The
-     *  temp-then-move keeps a reader from ever seeing a half-written file; a crash between the
-     *  two leaves either the old file or the new one, both valid. */
     private fun compact() {
         val lines = file.readLines().filter { it.isNotBlank() }
         val kept = lines.takeLast(lines.size / 2)
@@ -109,12 +105,6 @@ class DischargeLog(private val dir: File, private val maxBytes: Long = MAX_BYTES
         }
     }
 
-    /**
-     * One persisted discharge reading. Minimal by design (spec BG2/BG3) and independent of the
-     * sealed [RawLine] hierarchy, since `discharge.ndjson` only ever holds these; `t`/`e` mirror
-     * [RawLine]'s wall-clock/elapsed field names. `encodeDefaults = false` + `explicitNulls = false`
-     * keep a null [screenOn] off the wire.
-     */
     @Serializable
     private data class Line(
         val t: Long,

@@ -28,11 +28,18 @@ enum class CurrentScale(val toMicroAmps: Double) { MICRO_AMP(1.0), MILLI_AMP(1_0
  * @property counterKind `"COULOMB"` or `"SOC_DERIVED"` — the header's `Capabilities.counterKind`
  *   vocabulary, carried as a plain string and pinned to it by a test — or null when unknown
  *   (treated as absent for health arithmetic).
+ * @property chargingPositive whether a positive raw current means charge flowing INTO the battery.
+ *   `true` on both gauges measured so far (phone: 5,354 charging samples positive vs 141 negative;
+ *   Pixel Watch 5: 1,914 of 1,927 — projection DB pulled 2026-09-08); null where nothing has been
+ *   measured, which [Units.signedWatts] turns into no signed number rather than a guessed sign.
+ *   Defaulted, so a host constructing or copying a profile keeps compiling (CONTRIBUTING.md's
+ *   seam rule).
  */
 data class GaugeProfile(
     val id: String,
     val currentScale: CurrentScale,
     val counterKind: String?,
+    val chargingPositive: Boolean? = null,
 )
 
 object GaugeProfiles {
@@ -41,12 +48,14 @@ object GaugeProfiles {
      *  mA: no watch cell charges at under 5 mA. */
     const val MA_DETECT_RAW_MAX = 5_000L
 
-    /** The phone's own gauge — a µA coulomb counter, which is what this recorder was written on. */
-    val PHONE = GaugeProfile(id = "gauge-phone", currentScale = CurrentScale.MICRO_AMP, counterKind = "COULOMB")
+    /** The phone's own gauge — a µA coulomb counter, which is what this recorder was written on.
+     *  Charging-positive per S0 §b and the 2026-09-08 count. */
+    val PHONE = GaugeProfile(id = "gauge-phone", currentScale = CurrentScale.MICRO_AMP, counterKind = "COULOMB", chargingPositive = true)
 
     /** Google Pixel Watch (Qualcomm SW5100 BMS): µA, and its counter follows the reported level
-     *  rather than a real coulomb count. */
-    val QBG = GaugeProfile(id = "gauge-qbg", currentScale = CurrentScale.MICRO_AMP, counterKind = "SOC_DERIVED")
+     *  rather than a real coulomb count. Charging-positive, measured on the Pixel Watch 5 (1,914 of
+     *  1,927 charging samples positive, 2026-09-08). */
+    val QBG = GaugeProfile(id = "gauge-qbg", currentScale = CurrentScale.MICRO_AMP, counterKind = "SOC_DERIVED", chargingPositive = true)
 
     /** Samsung `sec_battery`: reports in mA, SOC-derived counter. */
     val SEC = GaugeProfile(id = "gauge-sec", currentScale = CurrentScale.MILLI_AMP, counterKind = "SOC_DERIVED")

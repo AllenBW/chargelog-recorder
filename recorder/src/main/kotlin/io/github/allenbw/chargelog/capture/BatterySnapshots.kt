@@ -17,6 +17,13 @@ import io.github.allenbw.chargelog.capture.log.RawLine
  */
 class BatterySnapshots(private val bm: BatteryManager) {
 
+    companion object {
+        /** `BatteryManager.EXTRA_CHARGING_STATUS` — public in the SDK only from API 36, while this
+         *  module's minSdk is 31. The value is an inlined string on every API, and like the two
+         *  hidden cap keys below, the key is stable in AOSP's `BatteryManager.java`. */
+        const val EXTRA_CHARGING_STATUS = "android.os.extra.CHARGING_STATUS"
+    }
+
     data class Sticky(
         val voltageRaw: Int?,
         val tempDeciC: Int?,
@@ -27,6 +34,9 @@ class BatterySnapshots(private val bm: BatteryManager) {
         val maxChargingCurrentRaw: Int?,
         val maxChargingVoltageRaw: Int?,
         val atElapsedMs: Long,
+        /** The platform's charging attribution (`measure/ChargingStatus`), or null when the key
+         *  was absent from this intent. Defaulted so a caller building a Sticky by hand compiles. */
+        val chargingStatus: Int? = null,
     )
 
     @Volatile var lastSticky: Sticky? = null
@@ -41,13 +51,11 @@ class BatterySnapshots(private val bm: BatteryManager) {
             scale = extra(BatteryManager.EXTRA_SCALE),
             status = extra(BatteryManager.EXTRA_STATUS),
             plugged = extra(BatteryManager.EXTRA_PLUGGED),
-            // BatteryManager.EXTRA_MAX_CHARGING_CURRENT/VOLTAGE are @hide framework
-            // constants, absent from the public SDK stub jar; their string keys are
-            // stable (AOSP frameworks/base/core/java/android/os/BatteryManager.java)
-            // and the sticky intent still carries them at runtime.
+            // TRAP docs/traps/hidden-battery-extras.md — @hide extras, read by literal key
             maxChargingCurrentRaw = extra("max_charging_current"),
             maxChargingVoltageRaw = extra("max_charging_voltage"),
             atElapsedMs = SystemClock.elapsedRealtime(),
+            chargingStatus = extra(EXTRA_CHARGING_STATUS),
         )
     }
 
@@ -71,9 +79,10 @@ class BatterySnapshots(private val bm: BatteryManager) {
             plugged = sticky?.plugged,
             maxChargingCurrentRaw = sticky?.maxChargingCurrentRaw,
             maxChargingVoltageRaw = sticky?.maxChargingVoltageRaw,
-            thermalStatus = null, // set by the service from its thermal listener
+            thermalStatus = null,
             screenOn = screenOn,
             hingeDeg = hingeDeg,
+            chargingStatus = sticky?.chargingStatus,
         ).let { s -> s }
     }
 }

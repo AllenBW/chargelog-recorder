@@ -7,14 +7,6 @@ import io.github.allenbw.chargelog.data.Replay
 import java.io.File
 import java.nio.file.Files
 
-/**
- * Loader for the real-session NDJSON fixtures under `src/testFixtures/resources/corpus/`.
- * Every file is read through the real ingestion path, [Replay.parse], so a fixture that the
- * app could not ingest fails here rather than on a device.
- *
- * Fixtures are copied out of the classpath into a temp directory under their own file name
- * because [Replay.parse] takes a [File] and records `file.name` as the session's source file.
- */
 object RecorderCorpus {
     fun file(name: String): File {
         val stream = RecorderCorpus::class.java.classLoader!!.getResourceAsStream("corpus/$name")
@@ -25,8 +17,6 @@ object RecorderCorpus {
         return out
     }
 
-    /** `parse` returns null only for a file with no header line; every fixture has one, so a
-     *  null here is a fixture bug worth failing loudly on. */
     fun parsed(name: String): Replay.Parsed =
         Replay.parse(file(name)) ?: error("Replay.parse returned null for corpus fixture '$name' — no header line?")
 

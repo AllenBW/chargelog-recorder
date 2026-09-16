@@ -32,6 +32,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // Lint's separate analysis of the unit-test, androidTest and testFixtures source sets was
+    // ~47 s of a consumer's lint run for sources it barely reports on. Main sources are still
+    // analyzed in full.
+    lint {
+        ignoreTestSources = true
+        ignoreTestFixturesSources = true
+    }
 }
 
 kotlin {

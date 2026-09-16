@@ -5,6 +5,7 @@ package io.github.allenbw.chargelog.capture.log
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -70,6 +71,31 @@ class NdjsonCodecTest {
         assertEquals(null, h.deviceId)
         assertEquals(null, h.gaugeProfileId)
         assertEquals(null, h.capabilities)
+        assertEquals(null, h.socModel)
+        assertEquals(null, h.totalMemBytes)
+        assertEquals(null, h.designCapacityMah)
+    }
+
+    @Test
+    fun `the added hardware-class fields round-trip without bumping the schema`() {
+        val h = RawLine.Header(
+            schema = 2, samplerProfileId = "p1", deviceModel = "Pixel 11 Pro Fold", osRelease = "17",
+            appVersion = "0.2.0", tickMs = 1000, sessionStartWallClockMs = 7,
+            deviceKind = DeviceKinds.PHONE, socModel = "Tensor G5", totalMemBytes = 12_450_000_000L,
+            designCapacityMah = 4_890,
+        )
+        val line = NdjsonCodec.encode(h)
+        assertEquals(h, NdjsonCodec.decode(line))
+        assertTrue(line.contains(""""socModel":"Tensor G5""""))
+        assertTrue(line.contains(""""totalMemBytes":12450000000"""))
+        assertTrue(line.contains(""""designCapacityMah":4890"""))
+        val older = NdjsonCodec.decode(
+            NdjsonCodec.encode(h.copy(socModel = null, totalMemBytes = null, designCapacityMah = null)),
+        ) as RawLine.Header
+        assertEquals(2, older.schema)
+        assertEquals(null, older.socModel)
+        assertEquals(null, older.totalMemBytes)
+        assertEquals(null, older.designCapacityMah)
     }
 
     @Test
@@ -97,5 +123,37 @@ class NdjsonCodecTest {
         val line = NdjsonCodec.encode(h)
         assertFalse(line.contains("deviceKind"))
         assertFalse(line.contains("capabilities"))
+    }
+
+    @Test
+    fun `chargingStatus rides the sample and is omitted when null`() {
+        val withStatus = sample.copy(chargingStatus = 5)
+        val line = NdjsonCodec.encode(withStatus)
+        assertTrue(line.contains("\"chargingStatus\":5"))
+        assertEquals(withStatus, NdjsonCodec.decode(line))
+        assertFalse(NdjsonCodec.encode(sample).contains("chargingStatus"))
+    }
+
+    @Test
+    fun `a sample line written before chargingStatus existed decodes with it null`() {
+        val decoded = NdjsonCodec.decode("""{"y":"s","t":1,"e":2,"level":50,"thermalStatus":0}""") as RawLine.Sample
+        assertNull(decoded.chargingStatus)
+        assertEquals(0, decoded.thermalStatus)
+    }
+
+    @Test
+    fun `the capability block carries reportsChargingStatus and chargingPositive, both omitted when null`() {
+        val caps = Capabilities(reportsCurrent = true, reportsChargingStatus = true, chargingPositive = true)
+        val h = RawLine.Header(
+            schema = 2, samplerProfileId = "p1", deviceModel = "m", osRelease = "17", appVersion = "0.2.0",
+            tickMs = 1000, sessionStartWallClockMs = 1, capabilities = caps,
+        )
+        val line = NdjsonCodec.encode(h)
+        assertTrue(line.contains("\"reportsChargingStatus\":true"))
+        assertTrue(line.contains("\"chargingPositive\":true"))
+        assertEquals(h, NdjsonCodec.decode(line))
+        val bare = NdjsonCodec.encode(h.copy(capabilities = Capabilities(reportsCurrent = true)))
+        assertFalse(bare.contains("reportsChargingStatus"))
+        assertFalse(bare.contains("chargingPositive"))
     }
 }

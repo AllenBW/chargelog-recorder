@@ -24,11 +24,8 @@ enum class RetentionWindow {
  * qualify.
  */
 object Retention {
-    /** 365 24-hour days, in milliseconds — [RetentionWindow.ONE_YEAR] is defined as this exact
-     *  span, not "one calendar year back", so [cutoffMs] is plain arithmetic. */
     private const val ONE_YEAR_MS = 365L * 24 * 3600 * 1000
 
-    /** 182 24-hour days, in milliseconds — [RetentionWindow.SIX_MONTHS]'s exact span. */
     private const val SIX_MONTHS_MS = 182L * 24 * 3600 * 1000
 
     /** The oldest instant, relative to [nowMs], that [window] keeps. `null` means keep forever —

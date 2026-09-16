@@ -48,7 +48,7 @@ class CaptureDaoTest {
         )
         db.dao().upsertSession(session(100))
         db.dao().upsertSamples(listOf(s))
-        db.dao().upsertSamples(listOf(s.copy(level = 51))) // same keys → replaces
+        db.dao().upsertSamples(listOf(s.copy(level = 51)))
         val stored = db.dao().samples(100)
         assertEquals(1, stored.size)
         assertEquals(51, stored[0].level)

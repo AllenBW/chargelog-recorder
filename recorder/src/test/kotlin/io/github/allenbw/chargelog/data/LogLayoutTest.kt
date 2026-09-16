@@ -47,6 +47,6 @@ class LogLayoutTest {
 
         assertEquals(0, n)
         assertEquals("new\n", File(to, "session-1.ndjson").readText())
-        assertTrue(File(from, "session-1.ndjson").exists()) // left behind, not lost
+        assertTrue(File(from, "session-1.ndjson").exists())
     }
 }

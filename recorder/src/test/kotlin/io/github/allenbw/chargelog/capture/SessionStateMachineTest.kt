@@ -9,6 +9,7 @@ import io.github.allenbw.chargelog.capture.log.DeviceKinds
 import io.github.allenbw.chargelog.capture.log.EventKinds
 import io.github.allenbw.chargelog.capture.log.RawLine
 import io.github.allenbw.chargelog.measure.CurrentScale
+import io.github.allenbw.chargelog.measure.GaugeProfiles
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -31,6 +32,25 @@ class SessionStateMachineTest {
         RawLine.Sample(t = e + 7_000, e = e, currentRaw = 50_000, voltageRaw = 4000, level = 100, status = BatteryStatus.FULL)
 
     @Test
+    fun `a gauge refinement lands on the NEXT session, never the one in progress`() {
+        val m = SessionStateMachine(profile.copy(
+            gaugeProfileId = GaugeProfiles.UNKNOWN.id,
+            capabilities = Capabilities(reportsChargeCounter = true),
+        ))
+        val first = m.on(CaptureInput.PowerConnected(t = 7_000, e = 100))
+            .filterIsInstance<CaptureEffect.OpenLog>().single()
+        assertEquals(GaugeProfiles.UNKNOWN.id, first.header.gaugeProfileId)
+
+        m.refineGauge(GaugeProfiles.UNKNOWN_MA)
+        assertEquals(GaugeProfiles.UNKNOWN.id, first.header.gaugeProfileId)
+
+        m.on(CaptureInput.PowerDisconnected(t = 8_000, e = 1_100))
+        val second = m.on(CaptureInput.PowerConnected(t = 9_000, e = 2_100))
+            .filterIsInstance<CaptureEffect.OpenLog>().single()
+        assertEquals(GaugeProfiles.UNKNOWN_MA.id, second.header.gaugeProfileId)
+    }
+
+    @Test
     fun `plug opens log with header, start event, wakelock`() {
         val fx = machine().on(CaptureInput.PowerConnected(t = 7_000, e = 100))
         val open = fx.filterIsInstance<CaptureEffect.OpenLog>().single()
@@ -48,7 +68,6 @@ class SessionStateMachineTest {
     fun `a watch profile settles on mA watts`() {
         val watch = SessionStateMachine(profile.copy(tickMs = 1000, currentScale = CurrentScale.MILLI_AMP))
         watch.on(CaptureInput.PowerConnected(t = 1, e = 0, targetLevel = 100))
-        // 350 mA at 4 V ≈ 1.4 W peak; then FULL at 4 mA (~1 % of peak) for the 120 s hold.
         watch.on(CaptureInput.Tick(RawLine.Sample(t = 1, e = 1_000, currentRaw = 350, voltageRaw = 4000, level = 99, status = BatteryStatus.CHARGING)))
         var settled = false
         for (i in 0..130) {
@@ -71,9 +90,7 @@ class SessionStateMachineTest {
         m.on(CaptureInput.PowerConnected(t = 1, e = 0))
         val fx1 = m.on(CaptureInput.Tick(sample(e = 1000)))
         assertTrue(fx1.filterIsInstance<CaptureEffect.Append>().single().line is RawLine.Sample)
-        // identical gauge tuple → skipped
         assertTrue(m.on(CaptureInput.Tick(sample(e = 2000))).isEmpty())
-        // changed tuple → appended
         val fx3 = m.on(CaptureInput.Tick(sample(e = 3000, current = 900)))
         assertEquals(1, fx3.filterIsInstance<CaptureEffect.Append>().size)
     }
@@ -98,9 +115,6 @@ class SessionStateMachineTest {
 
     @Test
     fun `unplug while recording ALSO logs the ground-truth disconnect marker`() {
-        // The connect side appends its marker unconditionally so consumers can join against it.
-        // The disconnect side only did so when NOT recording — i.e. almost never — so a plug-in
-        // span had a start marker and no end marker.
         val m = machine()
         m.on(CaptureInput.PowerConnected(t = 1, e = 0))
         val fx = m.on(CaptureInput.PowerDisconnected(t = 60_000, e = 59_000))
@@ -108,7 +122,6 @@ class SessionStateMachineTest {
             EventKinds.POWER_DISCONNECTED,
             fx.filterIsInstance<CaptureEffect.LogEvent>().single().event.kind,
         )
-        // and it still closes the session exactly as before
         assertEquals(EndReasons.UNPLUGGED, fx.filterIsInstance<CaptureEffect.CloseLog>().single().endReason)
     }
 
@@ -154,21 +167,36 @@ class SessionStateMachineTest {
         m.on(CaptureInput.Tick(sample(e = 1000)))
         m.on(CaptureInput.PowerDisconnected(t = 2, e = 2000))
         m.on(CaptureInput.PowerConnected(t = 3, e = 3000))
-        // same gauge tuple as previous session's sample must persist (fresh gate)
         val fx = m.on(CaptureInput.Tick(sample(e = 4000)))
         assertEquals(1, fx.filterIsInstance<CaptureEffect.Append>().size)
     }
 
     @Test
-    fun `header carries schema 2 and the profile's device identity and capabilities`() {
+    fun `header carries schema 2 and the profile's device identity, capabilities and hardware class`() {
         val caps = Capabilities(reportsCurrent = true, reportsChargeCounter = true, counterKind = CounterKinds.COULOMB, hasHinge = true, hasThermal = true)
-        val p = profile.copy(deviceKind = DeviceKinds.PHONE, deviceId = "ab".repeat(16), gaugeProfileId = null, capabilities = caps)
+        val p = profile.copy(
+            deviceKind = DeviceKinds.PHONE, deviceId = "ab".repeat(16), gaugeProfileId = null, capabilities = caps,
+            socModel = "Tensor G5", totalMemBytes = 12_450_000_000L, designCapacityMah = 4_890,
+        )
         val fx = SessionStateMachine(p).on(CaptureInput.PowerConnected(t = 7_000, e = 100))
         val h = fx.filterIsInstance<CaptureEffect.OpenLog>().single().header
         assertEquals(2, h.schema)
         assertEquals(DeviceKinds.PHONE, h.deviceKind)
         assertEquals("ab".repeat(16), h.deviceId)
         assertEquals(caps, h.capabilities)
+        assertEquals("Tensor G5", h.socModel)
+        assertEquals(12_450_000_000L, h.totalMemBytes)
+        assertEquals(4_890, h.designCapacityMah)
+    }
+
+    @Test
+    fun `a profile that declares no hardware class writes null, never a stand-in`() {
+        val fx = SessionStateMachine(profile).on(CaptureInput.PowerConnected(t = 7_000, e = 100))
+        val h = fx.filterIsInstance<CaptureEffect.OpenLog>().single().header
+        assertEquals(null, h.socModel)
+        assertEquals(null, h.totalMemBytes)
+        // A host that does not know its cell size records nothing rather than a nominal figure.
+        assertEquals(null, h.designCapacityMah)
     }
 
     @Test
@@ -210,12 +238,9 @@ class SessionStateMachineTest {
         m.on(CaptureInput.PowerDisconnected(t = 300_000, e = 299_000))
         // Opening declares TICK, so a stale SetSampling(EVENT) from the session that just closed
         // can never leave the next one tickerless: the open's own effect comes after it in queue
-        // order and wins.
         val open = m.on(CaptureInput.PowerConnected(t = 301_000, e = 300_000))
         assertTrue(open.contains(CaptureEffect.SetSampling(SamplingMode.TICK)))
         assertTrue(m.recording)
-        // And the gate is back on the profile's own cadence: 10 s of silence is a gap again, not
-        // the settled policy's 100 s.
         m.on(CaptureInput.Tick(charging(310_000L, 50)))
         val late = m.on(CaptureInput.Tick(charging(320_000L, 50)))
         assertTrue(late.filterIsInstance<CaptureEffect.Append>().map { it.line }.filterIsInstance<RawLine.Event>().any { it.kind == EventKinds.GAP })

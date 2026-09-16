@@ -47,7 +47,6 @@ class GaugeProfileTest {
         assertSame(GaugeProfiles.SEC, GaugeProfiles.forDevice("samsung", "SM-R960", isWatch = true))
         assertSame(GaugeProfiles.UNKNOWN, GaugeProfiles.forDevice("Mobvoi", "TicWatch Pro 5", isWatch = true))
         // The detected-mA entry exists for `plausibility`'s header id alone; the bundled table
-        // never selects it, because nothing about a manufacturer implies the scale.
         assertTrue("forDevice never selects the detected-mA entry", listOf("Mobvoi", "Google", "samsung", "OnePlus").none {
             GaugeProfiles.forDevice(it, "a watch", isWatch = true) === GaugeProfiles.UNKNOWN_MA
         })
@@ -62,12 +61,10 @@ class GaugeProfileTest {
     }
 
     @Test fun `plausibility promotes UNKNOWN to mA when charging current reads under 5000`() {
-        val mA = listOf(350L, 360L, 355L, 340L)          // a Samsung-style mA gauge
-        val ua = listOf(350_000L, 360_000L, 355_000L)    // a µA gauge
+        val mA = listOf(350L, 360L, 355L, 340L)
+        val ua = listOf(350_000L, 360_000L, 355_000L)
         val asMa = GaugeProfiles.plausibility(mA, GaugeProfiles.UNKNOWN)
         assertEquals(CurrentScale.MILLI_AMP, asMa.currentScale)
-        // A distinct table entry, not an off-table copy — the header records the detected scale,
-        // and `byId` at read time resolves it back to mA instead of µA.
         assertSame(GaugeProfiles.UNKNOWN_MA, asMa)
         assertEquals("gauge-unknown-ma", asMa.id)
         assertSame(GaugeProfiles.UNKNOWN, GaugeProfiles.plausibility(ua, GaugeProfiles.UNKNOWN))
@@ -80,5 +77,13 @@ class GaugeProfileTest {
 
     @Test fun `plausibility with no charging samples is a no-op`() {
         assertSame(GaugeProfiles.UNKNOWN, GaugeProfiles.plausibility(emptyList(), GaugeProfiles.UNKNOWN))
+    }
+
+    @Test fun `the two measured gauges are charging-positive and the unverified ones say nothing`() {
+        assertEquals(true, GaugeProfiles.PHONE.chargingPositive)
+        assertEquals(true, GaugeProfiles.QBG.chargingPositive)
+        assertNull(GaugeProfiles.SEC.chargingPositive)
+        assertNull(GaugeProfiles.UNKNOWN.chargingPositive)
+        assertNull(GaugeProfiles.UNKNOWN_MA.chargingPositive)
     }
 }

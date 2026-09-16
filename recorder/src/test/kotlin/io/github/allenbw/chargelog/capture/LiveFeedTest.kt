@@ -13,7 +13,6 @@ import org.junit.Test
 
 class LiveFeedTest {
 
-    // LiveFeed is a singleton object, so tests must not order-couple.
     @Before
     fun setUp() = LiveFeed.reset()
 
@@ -118,8 +117,6 @@ class LiveFeedTest {
 
         LiveFeed.reset()
         // onSample doesn't need a prior onOpen — it publishes a Snapshot unconditionally — so
-        // this exercises reset()'s own clearing directly, without routing through onOpen's.
-        // If reset() failed to clear history, this would read 3 (2 stale + 1 new) instead of 1.
         LiveFeed.onSample(sample(e = 6000))
         assertEquals(1, LiveFeed.state.value!!.history.size)
     }

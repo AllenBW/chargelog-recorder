@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * The UI only collects [state].
  */
 object LiveFeed {
-    private const val RING = 600 // ~10 min at 1 Hz
+    private const val RING = 600
 
     data class Snapshot(
         val sample: RawLine.Sample?,
@@ -31,20 +31,6 @@ object LiveFeed {
     private val watts = ArrayDeque<Double>()
     private val levels = ArrayDeque<Pair<Long, Int>>()
 
-    /**
-     * Every sample of the current (or, after [onClose], just-finished) session, so a live
-     * session can be handed to an analysis the same way a stored one is.
-     *
-     * Deliberately UNBOUNDED — unlike [watts]/[levels] above, which only feed a sparkline and
-     * are allowed to forget. A multi-hour 1 Hz session is on the order of 15k compact value
-     * objects, which is an acceptable amount of memory to hold. Consumers may depend on the
-     * session's *earliest* samples, which are exactly what a size cap would evict first, and
-     * the loss would not show up as an error. Do not cap this list.
-     *
-     * A plain `ArrayList` is safe here for the same reason [watts]/[levels] are: this whole
-     * object is pump-confined (see the class KDoc), so nothing else ever mutates it. Do not add
-     * synchronization — a lock here would misleadingly imply the confinement no longer holds.
-     */
     private val history = ArrayList<AnalyzerSample>()
     private var sessionStartMs: Long? = null
     private val _state = MutableStateFlow<Snapshot?>(null)
@@ -53,8 +39,6 @@ object LiveFeed {
     fun onOpen(sessionStartMs: Long) {
         this.sessionStartMs = sessionStartMs
         watts.clear(); levels.clear(); history.clear()
-        // Seeded, never copied: a copy-on-maybe-stale here would briefly
-        // broadcast recording=true carrying the PRIOR session's last sample.
         _state.value = Snapshot(sample = null, recording = true, sessionStartMs = sessionStartMs,
             recentWatts = emptyList(), recentLevels = emptyList(), history = emptyList())
     }
@@ -69,8 +53,6 @@ object LiveFeed {
 
     fun onClose() {
         sessionStartMs = null
-        // copy(...) carries `history` through unchanged — recap-adjacent UI may still read the
-        // just-finished session's full history off the final snapshot.
         _state.value = _state.value?.copy(recording = false, sessionStartMs = null)
     }
 

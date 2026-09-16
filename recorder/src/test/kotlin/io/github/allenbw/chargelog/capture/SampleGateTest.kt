@@ -49,7 +49,7 @@ class SampleGateTest {
     fun `gap beyond factor times tick emits gap event even when skipping`() {
         val gate = SampleGate(gapFactor = 3)
         gate.offer(sample(e = 0), tickMs = 1000)
-        val d = gate.offer(sample(e = 10_000), tickMs = 1000) // 10 s > 3 * 1 s
+        val d = gate.offer(sample(e = 10_000), tickMs = 1000)
         val gap = when (d) {
             is SampleGate.Decision.Persist -> d.gap
             is SampleGate.Decision.Skip -> d.gap
@@ -77,5 +77,13 @@ class SampleGateTest {
         gate.offer(sample(e = 0), tickMs = 1000)
         gate.reset()
         assertTrue(gate.offer(sample(e = 1000), tickMs = 1000) is SampleGate.Decision.Persist)
+    }
+
+    @Test
+    fun `a charging-status change alone persists`() {
+        val gate = SampleGate()
+        gate.offer(sample(e = 0).copy(chargingStatus = 1), tickMs = 1000)
+        assertTrue(gate.offer(sample(e = 1000).copy(chargingStatus = 1), tickMs = 1000) is SampleGate.Decision.Skip)
+        assertTrue(gate.offer(sample(e = 2000).copy(chargingStatus = 5), tickMs = 1000) is SampleGate.Decision.Persist)
     }
 }

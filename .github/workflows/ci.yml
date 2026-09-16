@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: 2026 BluffWorks LLC
 # SPDX-License-Identifier: GPL-3.0-only
 
-# Dormant: this workflow is authored for the standalone public repo
-# (github.com/AllenBW/chargelog-recorder) and does not run in the private monorepo — it lives
-# under recorder/.github/ here (not .github/ at the repo root) precisely so it stays inert until
-# recorder/ is mirrored out. Once mirrored, :sample exists, .github/ is at the repo root, and
-# every job below becomes live CI on the founding commit. Both jobs are written to be correct on
-# day one of that mirror, because the first run is attached to a commit nobody can amend.
+# Live since 2026-09-01: on github.com/AllenBW/chargelog-recorder this file is
+# .github/workflows/ci.yml at the repository root, and both jobs below run on every push and pull
+# request. In the repository this tree is mirrored FROM it sits one level down and stays inert,
+# which is why nothing here depends on that repository's tooling — :sample and the wrapper travel
+# with this tree and are all either job needs. Both jobs were written to be correct on day one of
+# the mirror, because the first run is attached to an orphan founding commit nobody can amend;
+# they have been green since.
 name: ci
 on:
   push:

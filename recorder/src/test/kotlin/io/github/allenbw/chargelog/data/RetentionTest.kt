@@ -11,7 +11,7 @@ import org.junit.Test
 
 class RetentionTest {
 
-    private val now = 1_700_000_000_000L // arbitrary fixed instant
+    private val now = 1_700_000_000_000L
 
     @Test
     fun `FOREVER never prunes -- cutoff is null`() {

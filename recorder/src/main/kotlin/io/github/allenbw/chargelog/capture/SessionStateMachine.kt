@@ -8,6 +8,7 @@ import io.github.allenbw.chargelog.capture.log.DeviceKinds
 import io.github.allenbw.chargelog.capture.log.EventKinds
 import io.github.allenbw.chargelog.capture.log.RawLine
 import io.github.allenbw.chargelog.measure.CurrentScale
+import io.github.allenbw.chargelog.measure.GaugeProfile
 
 data class SamplerProfile(
     val id: String,
@@ -20,6 +21,9 @@ data class SamplerProfile(
     val gaugeProfileId: String? = null,
     val capabilities: Capabilities? = null,
     val currentScale: CurrentScale = CurrentScale.MICRO_AMP,
+    val socModel: String? = null,
+    val totalMemBytes: Long? = null,
+    val designCapacityMah: Int? = null,
 )
 
 object EndReasons {
@@ -66,7 +70,7 @@ enum class SamplingMode { TICK, EVENT }
  * service is a thin shell that executes the effects. Keeping this
  * pure is what makes the capture layer JVM-testable.
  */
-class SessionStateMachine(private val profile: SamplerProfile) {
+class SessionStateMachine(profile: SamplerProfile) {
 
     companion object {
         /** Gate tick while settled: samples are gauge-driven, so only > 5 min of silence is a gap. */
@@ -75,14 +79,35 @@ class SessionStateMachine(private val profile: SamplerProfile) {
 
     var recording = false
         private set
+
+    private var profile: SamplerProfile = profile
+    private var pendingGauge: GaugeProfile? = null
     private val gate = SampleGate()
-    private val settle = SettleDetector(scale = profile.currentScale)
+    private var settle = SettleDetector(scale = profile.currentScale)
     private var targetLevel = 80
     private var gateTickMs = profile.tickMs
+
+    /**
+     * Record under [gauge] from the NEXT session on — the scale probe's one writer.
+     *
+     * Deferred rather than immediate, deliberately. The header of the session in progress went out
+     * at plug-in and cannot be rewritten, and swapping the settle rule's scale underneath a
+     * half-finished settle decision would be a second wrong answer on top of the first. The
+     * session that LEARNED it is corrected instead by the `gauge_scale` event the recorder logs
+     * into it; every session after this opens under the refined profile and needs no correction.
+     */
+    fun refineGauge(gauge: GaugeProfile) {
+        if (gauge.id != profile.gaugeProfileId) pendingGauge = gauge
+    }
 
     fun on(input: CaptureInput): List<CaptureEffect> = when (input) {
         is CaptureInput.PowerConnected -> if (recording) emptyList() else {
             recording = true
+            pendingGauge?.let { g ->
+                profile = SamplerProfiles.withGauge(profile, g)
+                settle = SettleDetector(scale = g.currentScale)
+                pendingGauge = null
+            }
             gate.reset()
             settle.reset()
             targetLevel = input.targetLevel
@@ -101,22 +126,18 @@ class SessionStateMachine(private val profile: SamplerProfile) {
                         deviceId = profile.deviceId,
                         gaugeProfileId = profile.gaugeProfileId,
                         capabilities = profile.capabilities,
+                        socModel = profile.socModel,
+                        totalMemBytes = profile.totalMemBytes,
+                        designCapacityMah = profile.designCapacityMah,
                     )
                 ),
                 CaptureEffect.Append(
                     RawLine.Event(t = input.t, e = input.e, kind = EventKinds.SESSION_START)
                 ),
-                // CADENCE is emitted at open as well as at every policy change, so a reader never
-                // has to infer the opening cadence from the first two sample timestamps. The
-                // open-time line names the profile's own tick, mirroring the settled/resumed
-                // CADENCE lines below.
                 CaptureEffect.Append(
                     RawLine.Event(input.t, input.e, EventKinds.CADENCE, "tickMs=${profile.tickMs},policy=tick")
                 ),
                 CaptureEffect.AcquireWakeLock,
-                // Declared, not assumed: a session that settled and then closed leaves a
-                // SetSampling(EVENT) behind it in the service's queue, and the next open has to
-                // win over it in queue order or the new session would run with no ticker.
                 CaptureEffect.SetSampling(SamplingMode.TICK),
             )
         }
@@ -151,11 +172,6 @@ class SessionStateMachine(private val profile: SamplerProfile) {
             }
         }
 
-        // The disconnect marker goes to events.ndjson in BOTH branches, matching the connect
-        // side's unconditional contract ("must land in events.ndjson whatever the session state
-        // is"). It used to be emitted only in the not-recording branch — i.e. almost never, since
-        // the phone is normally recording when it gets unplugged — leaving every plug-in span
-        // with a start marker and no end marker for consumers to join against.
         is CaptureInput.PowerDisconnected -> if (!recording) {
             listOf(CaptureEffect.LogEvent(
                 RawLine.Event(t = input.t, e = input.e, kind = EventKinds.POWER_DISCONNECTED)))

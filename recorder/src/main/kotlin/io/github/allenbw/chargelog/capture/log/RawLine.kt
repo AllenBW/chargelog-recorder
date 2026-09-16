@@ -30,6 +30,15 @@ data class Capabilities(
     val counterKind: String? = null,
     val hasHinge: Boolean? = null,
     val hasThermal: Boolean? = null,
+    /** Whether the platform's sticky battery intent carried `android.os.extra.CHARGING_STATUS`
+     *  at service start — so "this device never says" is distinguishable from "not this sample".
+     *  Added 2026-09-08; nullable with a default, so the schema stays 2. */
+    val reportsChargingStatus: Boolean? = null,
+    /** The gauge's current-sign convention as the recorder's profile table knew it: `true` when a
+     *  positive `currentRaw` means charge flowing INTO the battery, `false` when it means out,
+     *  null when unmeasured. Declared per session for the same reason [counterKind] is: a reader
+     *  must not have to guess a sign from a catalog it may not have. */
+    val chargingPositive: Boolean? = null,
 )
 
 /**
@@ -53,12 +62,16 @@ sealed interface RawLine {
         val appVersion: String,
         val tickMs: Long,
         val sessionStartWallClockMs: Long,
-        // Nullable with defaults so schema-1 files decode unchanged and old
-        // readers ignore these keys (NdjsonCodec: ignoreUnknownKeys, encodeDefaults = false).
         val deviceKind: String? = null,
         val deviceId: String? = null,
         val gaugeProfileId: String? = null,
         val capabilities: Capabilities? = null,
+        val socModel: String? = null,
+        val totalMemBytes: Long? = null,
+        /** The cell's design capacity in mAh as the HOST knew it at capture time
+         *  (`RecorderHost.designCapacityMah`), or absent when it did not. Additive and nullable,
+         *  so the schema stays 2. */
+        val designCapacityMah: Int? = null,
     ) : RawLine {
         override val t: Long get() = sessionStartWallClockMs
         override val e: Long get() = 0
@@ -83,6 +96,11 @@ sealed interface RawLine {
         val thermalStatus: Int? = null,
         val screenOn: Boolean? = null,
         val hingeDeg: Float? = null,
+        /** `BatteryManager.EXTRA_CHARGING_STATUS` raw — the platform's own attribution of how the
+         *  charge is going (`measure/ChargingStatus`: 1 normal · 2 too cold · 3 too hot · 4 long
+         *  life · 5 adaptive). Null when the platform did not supply the key. Additive and
+         *  nullable, so the schema stays 2. */
+        val chargingStatus: Int? = null,
     ) : RawLine
 
     @Serializable
@@ -111,6 +129,11 @@ object EventKinds {
      * re-delivery (observed in testing, in a force-stop-then-relaunch scenario).
      */
     const val BOOT = "boot"
+
+    /** An `ACTION_MY_PACKAGE_REPLACED` broadcast was received — the app was just updated — and
+     *  the recorder restarted itself from it. */
+    const val PACKAGE_REPLACED = "package_replaced"
+
     const val SERVICE_START = "service_start"
     const val SERVICE_STOP = "service_stop"
     const val HINGE = "hinge"
@@ -118,9 +141,29 @@ object EventKinds {
     const val SCREEN_OFF = "screen_off"
     const val THERMAL = "thermal"
 
+    /** The platform's charging attribution changed (`Sample.chargingStatus`); `detail` is
+     *  `"status=N"`. The `thermal` event's twin, so an Adaptive hold or a thermal pause is
+     *  findable in `events.ndjson` without scanning samples. */
+    const val CHARGING_STATUS = "charging_status"
+
     /** A session file arrived whose id (start ms) already belongs to a DIFFERENT device; it was
      *  skipped, never merged. detail: id=…,deviceId=…,existingDeviceId=… */
     const val INGEST_CONFLICT = "ingest_conflict"
+
+    /**
+     * The recorder resolved an UNKNOWN gauge's current SCALE from this session's own first
+     * samples, and the header's `gaugeProfileId` is therefore provisional. detail:
+     * `gaugeProfileId=gauge-unknown-ma`.
+     *
+     * A header is written at plug-in, before any sample exists, so a scale the samples reveal
+     * cannot be in it. This line is how the session it was learned FROM still reads correctly —
+     * `Replay` prefers it over the header — and every later session simply opens with the
+     * refined profile. Additive: a log without one is a log whose header was right.
+     */
+    const val GAUGE_SCALE = "gauge_scale"
+
+    /** The header key [GAUGE_SCALE]'s detail carries, and what [GAUGE_SCALE] readers split on. */
+    const val GAUGE_SCALE_DETAIL_KEY = "gaugeProfileId="
 
     /** The recorder changed its capture policy without closing the session:
      *  detail "settled" (wake lock released, sampling becomes event-driven) or "resumed". */

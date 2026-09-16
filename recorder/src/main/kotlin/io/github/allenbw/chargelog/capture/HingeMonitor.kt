@@ -37,10 +37,6 @@ class HingeMonitor(
     fun start() {
         val candidates = sensorManager.getSensorList(Sensor.TYPE_HINGE_ANGLE)
         val sensor = candidates.firstOrNull { it.isWakeUpSensor } ?: candidates.firstOrNull() ?: return
-        // The platform's own name usually already carries the marker (it does
-        // on the Pixel Fold: "Hinge Angle Sensor (wake-up)"), so only add it
-        // when it's missing — otherwise the committed service_start detail
-        // reads "hinge=Hinge Angle Sensor (wake-up) (wake-up)".
         val marker = " (wake-up)"
         selectedSensorName = when {
             !sensor.isWakeUpSensor -> sensor.name

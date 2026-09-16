@@ -45,6 +45,6 @@ class SampleGate(private val gapFactor: Long = 3) {
     private fun gaugeTuple(s: RawLine.Sample) = listOf<Any?>(
         s.currentRaw, s.chargeCounterRaw, s.voltageRaw, s.tempDeciC, s.level,
         s.scale, s.status, s.plugged, s.maxChargingCurrentRaw,
-        s.maxChargingVoltageRaw, s.thermalStatus, s.screenOn, s.hingeDeg,
+        s.maxChargingVoltageRaw, s.thermalStatus, s.screenOn, s.hingeDeg, s.chargingStatus,
     )
 }

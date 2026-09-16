@@ -9,7 +9,7 @@ import io.github.allenbw.chargelog.capture.log.DeviceKinds
 
 @Entity(tableName = "sessions")
 data class SessionEntity(
-    @PrimaryKey val id: Long, // session start wall-clock ms — natural key shared with the raw log filename
+    @PrimaryKey val id: Long,
     val startedAtMs: Long,
     val endedAtMs: Long?,
     val endReason: String?,
@@ -20,7 +20,6 @@ data class SessionEntity(
     val startChargeCounterRaw: Long?,
     val endChargeCounterRaw: Long?,
     val sourceFile: String,
-    // Which device authored this session and what its gauge declared.
     val deviceKind: String = DeviceKinds.PHONE,
     val deviceId: String? = null,
     val deviceModel: String? = null,
@@ -28,6 +27,18 @@ data class SessionEntity(
     val reportsCurrent: Boolean? = null,
     val counterKind: String? = null,
     val hasHinge: Boolean? = null,
+    val osRelease: String? = null,
+    val appVersion: String? = null,
+    val socModel: String? = null,
+    val totalMemBytes: Long? = null,
+    /** Version 4: the cell's design capacity in mAh at capture time. Recorded per session rather
+     *  than looked up live, so a synced watch row and the phone's own history each keep the
+     *  capacity their cell actually had. */
+    val designCapacityMah: Int? = null,
+    /** Version 5: the gauge's current-sign convention as the header declared it
+     *  (`Capabilities.chargingPositive`). Null on a legacy header; `sessionFacts` resolves that
+     *  through the gauge catalog by [gaugeProfileId], the way it resolves [counterKind]. */
+    val chargingPositive: Boolean? = null,
 )
 
 /** Whether this session was recorded on a watch — the one bit that decides which conventions a

@@ -144,8 +144,6 @@ class ReplayReconcileTest {
         assertEquals(1, dao.sessions.size)
     }
 
-    // --- deleteSessionCompletely ---
-
     @Test
     fun `deleteSessionCompletely deletes the raw file and the db rows on success`() {
         val f = writeSession(
@@ -247,7 +245,6 @@ class ReplayReconcileTest {
         val w1 = File(tmp.root, "synced/w1").apply { mkdirs() }
         writeSession(header(5000L, deviceId = "w1"), sample(6000L, 20L, 60), event(7000L, 30L, EventKinds.SESSION_END), dir = w1)
         val dao = FakeCaptureDao()
-        // A stale row with no file behind it must not survive a rebuild.
         dao.sessions[42L] = SessionEntity(
             id = 42L, startedAtMs = 42L, endedAtMs = null, endReason = null, samplerProfileId = "p", schemaVersion = 1,
             startLevel = null, endLevel = null, startChargeCounterRaw = null, endChargeCounterRaw = null, sourceFile = "gone.ndjson",
