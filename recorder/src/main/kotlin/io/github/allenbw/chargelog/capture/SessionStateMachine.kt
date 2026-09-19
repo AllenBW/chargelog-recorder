@@ -33,8 +33,15 @@ object EndReasons {
 
 sealed interface CaptureInput {
     /** @param targetLevel the user's charge target, passed in at session open so the
-     *  pure machine never reads preferences itself; [SettleDetector] uses it as the hold level. */
-    data class PowerConnected(val t: Long, val e: Long, val targetLevel: Int = 80) : CaptureInput
+     *  pure machine never reads preferences itself; [SettleDetector] uses it as the hold level.
+     *  @param cycleCount the platform's battery cycle count at plug-in, written into the header;
+     *  null when the platform does not report one. */
+    data class PowerConnected(
+        val t: Long,
+        val e: Long,
+        val targetLevel: Int = 80,
+        val cycleCount: Int? = null,
+    ) : CaptureInput
     data class PowerDisconnected(val t: Long, val e: Long) : CaptureInput
     data class Tick(val sample: RawLine.Sample) : CaptureInput
     data class ServiceStopping(val t: Long, val e: Long) : CaptureInput
@@ -129,6 +136,7 @@ class SessionStateMachine(profile: SamplerProfile) {
                         socModel = profile.socModel,
                         totalMemBytes = profile.totalMemBytes,
                         designCapacityMah = profile.designCapacityMah,
+                        cycleCount = input.cycleCount,
                     )
                 ),
                 CaptureEffect.Append(

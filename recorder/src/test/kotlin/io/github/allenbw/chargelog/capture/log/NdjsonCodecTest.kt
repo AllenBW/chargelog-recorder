@@ -74,6 +74,20 @@ class NdjsonCodecTest {
         assertEquals(null, h.socModel)
         assertEquals(null, h.totalMemBytes)
         assertEquals(null, h.designCapacityMah)
+        assertEquals(null, h.cycleCount)
+    }
+
+    @Test
+    fun `cycleCount rounds-trips in the header and is omitted when null`() {
+        val h = RawLine.Header(
+            schema = 2, samplerProfileId = "p1", deviceModel = "Pixel 11 Pro Fold", osRelease = "17",
+            appVersion = "0.3.2", tickMs = 1000, sessionStartWallClockMs = 7, cycleCount = 7,
+        )
+        val line = NdjsonCodec.encode(h)
+        assertEquals(h, NdjsonCodec.decode(line))
+        assertTrue(line.contains(""""cycleCount":7"""))
+        assertFalse(NdjsonCodec.encode(h.copy(cycleCount = null)).contains("cycleCount"))
+        assertEquals(2, (NdjsonCodec.decode(NdjsonCodec.encode(h.copy(cycleCount = null))) as RawLine.Header).schema)
     }
 
     @Test

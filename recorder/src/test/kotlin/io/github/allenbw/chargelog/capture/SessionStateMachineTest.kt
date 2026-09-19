@@ -197,6 +197,18 @@ class SessionStateMachineTest {
         assertEquals(null, h.totalMemBytes)
         // A host that does not know its cell size records nothing rather than a nominal figure.
         assertEquals(null, h.designCapacityMah)
+        assertEquals(null, h.cycleCount)
+    }
+
+    @Test
+    fun `the header carries the cycle count the plug-in input brought, and null when it brought none`() {
+        val withCount = SessionStateMachine(profile).on(CaptureInput.PowerConnected(t = 7_000, e = 100, cycleCount = 12))
+        assertEquals(12, withCount.filterIsInstance<CaptureEffect.OpenLog>().single().header.cycleCount)
+        val m = SessionStateMachine(profile)
+        m.on(CaptureInput.PowerConnected(t = 7_000, e = 100, cycleCount = 12))
+        m.on(CaptureInput.PowerDisconnected(t = 8_000, e = 1_100))
+        val again = m.on(CaptureInput.PowerConnected(t = 9_000, e = 2_100))
+        assertEquals(null, again.filterIsInstance<CaptureEffect.OpenLog>().single().header.cycleCount)
     }
 
     @Test

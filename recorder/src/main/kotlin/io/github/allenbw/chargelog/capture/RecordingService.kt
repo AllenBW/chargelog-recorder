@@ -283,7 +283,7 @@ class RecordingService : Service() {
 
     private fun openSessionIfEnabled(t: Long, e: Long) {
         if (!CapturePrefs.recordEnabled(this)) return
-        submit(CaptureInput.PowerConnected(t, e, targetLevel = host.chargeTargetLevel()))
+        submit(CaptureInput.PowerConnected(t, e, host.chargeTargetLevel(), snapshots.lastSticky?.cycleCount))
         samplingMode = SamplingMode.TICK
         plugged = true
         startTicking()

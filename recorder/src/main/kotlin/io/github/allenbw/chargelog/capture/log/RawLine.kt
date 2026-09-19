@@ -72,6 +72,10 @@ sealed interface RawLine {
          *  (`RecorderHost.designCapacityMah`), or absent when it did not. Additive and nullable,
          *  so the schema stays 2. */
         val designCapacityMah: Int? = null,
+        /** `BatteryManager.EXTRA_CYCLE_COUNT` as the sticky battery intent carried it at plug-in,
+         *  or absent when the platform did not supply the key. Additive and nullable, so the
+         *  schema stays 2. */
+        val cycleCount: Int? = null,
     ) : RawLine {
         override val t: Long get() = sessionStartWallClockMs
         override val e: Long get() = 0

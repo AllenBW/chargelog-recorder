@@ -12,7 +12,11 @@ import kotlin.math.min
  * The terminal-state rule: a charge has SETTLED after [holdMs] of continuous
  * "holding" samples — status FULL, or NOT_CHARGING at the target, or level pinned at its running
  * max (≥ min(target, 95)) with trickle current — and RESUMES when real charging returns below the
- * max. A pause at low level (thermal) never holds, because none of the three predicates admit it.
+ * max, or when the level rises above the level it settled at while still CHARGING. That rise is
+ * proof the pinned predicate settled early on this charge (a top-of-charge level increment can
+ * outlast [holdMs]), so after it the pinned predicate is not trusted again until [reset]: only a
+ * status can settle the charge from then on. A pause at low level (thermal) never holds, because
+ * none of the three predicates admit it.
  * Pure and pump-confined: owned by [SessionStateMachine], fed every persisted-or-not tick.
  *
  * @param scale the gauge's current scale, so `w` is read in real watts. **Today it is
@@ -37,8 +41,13 @@ class SettleDetector(
     private var peakW = 0.0
     private var maxLevel = -1
     private var holdSinceE: Long? = null
+    private var settledAtLevel = -1
+    private var pinnedTrusted = true
 
-    fun reset() { settled = false; peakW = 0.0; maxLevel = -1; holdSinceE = null }
+    fun reset() {
+        settled = false; peakW = 0.0; maxLevel = -1; holdSinceE = null
+        settledAtLevel = -1; pinnedTrusted = true
+    }
 
     fun offer(sample: RawLine.Sample, targetLevel: Int): Transition? {
         val w = Units.watts(sample.currentRaw, sample.voltageRaw, scale)
@@ -49,7 +58,7 @@ class SettleDetector(
         if (!settled) {
             val holdLevel = min(targetLevel, 95)
             val atTarget = level != null && level >= targetLevel - 1
-            val pinned = level != null && level >= holdLevel && level == maxLevel
+            val pinned = pinnedTrusted && level != null && level >= holdLevel && level == maxLevel
             val trickle = w != null && peakW > 0.0 && w <= trickleFraction * peakW
             val holding = sample.status == BatteryStatus.FULL ||
                 (sample.status == BatteryStatus.NOT_CHARGING && atTarget) ||
@@ -57,13 +66,14 @@ class SettleDetector(
             if (!holding) { holdSinceE = null; return null }
             val since = holdSinceE ?: sample.e.also { holdSinceE = it }
             if (sample.e - since < holdMs) return null
-            settled = true; holdSinceE = null
+            settled = true; holdSinceE = null; settledAtLevel = maxLevel
             return Transition.SETTLED
         }
-        val resumed = sample.status == BatteryStatus.CHARGING &&
-            w != null && w > resumeFraction * peakW &&
-            level != null && level < maxLevel
-        if (!resumed) return null
+        val charging = sample.status == BatteryStatus.CHARGING && level != null
+        val rose = charging && level > settledAtLevel
+        val bounced = charging && w != null && w > resumeFraction * peakW && level < maxLevel
+        if (!rose && !bounced) return null
+        if (rose) pinnedTrusted = false
         settled = false
         return Transition.RESUMED
     }

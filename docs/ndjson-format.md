@@ -50,6 +50,7 @@ since boot — the field to use for computing durations and deltas within one bo
 | `gaugeProfileId` *(schema ≥ 2, nullable)* | Identifies the fuel-gauge quirk profile applied when interpreting this device's raw readings. |
 | `socModel` *(nullable)* | The system-on-chip name (`Build.SOC_MODEL`), or absent when the platform reports it as unknown. Names the hardware class, not the unit. Added after the first schema-2 builds, so a schema-2 file may lack it. |
 | `designCapacityMah` *(nullable)* | The cell's design capacity in mAh as the host knew it at capture time, or absent when it did not. The recorder cannot read this itself: the kernel's `charge_full_design` is refused to an unprivileged app by SELinux, so the host supplies it (`RecorderHost.designCapacityMah`). Recorded per session so a reader never substitutes the current device's figure for the one that cell actually had. Added after the first schema-2 builds. |
+| `cycleCount` *(nullable)* | `BatteryManager.EXTRA_CYCLE_COUNT` as the sticky battery intent carried it at plug-in — the platform's count of full charge cycles the cell has seen, or absent when the platform did not supply the key. Read once per session so a longitudinal reader can pair a measured capacity with the cycle it was measured at. Added 2026-09-17 without a schema bump. |
 | `totalMemBytes` *(nullable)* | Kernel-visible total memory in bytes, raw as `ActivityManager.MemoryInfo.totalMem` reports it. With `deviceModel` and `socModel` this identifies the SKU. Added after the first schema-2 builds, so a schema-2 file may lack it. |
 | `capabilities` *(schema ≥ 2, nullable)* | An object declaring what this device's gauge provides — `reportsCurrent`, `reportsChargeCounter`, `counterKind` (`"COULOMB"` or `"SOC_DERIVED"`), `hasHinge`, `hasThermal`, and since 2026-09-08 `reportsChargingStatus` (whether the sticky battery intent carried `android.os.extra.CHARGING_STATUS` at service start) and `chargingPositive` (whether a positive `currentRaw` means charge flowing into the battery — the gauge's sign convention, as the recorder's profile table knew it; absent when unmeasured). Every field is nullable; `null` means "not declared," never "false." Declared once per session so absence is visible at the session level rather than only as per-sample `null`s. |
 
@@ -162,7 +163,7 @@ were all added going from schema 1 to schema 2, for multi-device and multi-form-
 The version only needs to bump when a change isn't safely backward-compatible under that
 tolerant-decode contract — a genuinely additive field does not require it.
 
-`socModel`, `totalMemBytes`, `designCapacityMah`, the sample's `chargingStatus` and the capability
+`socModel`, `totalMemBytes`, `designCapacityMah`, `cycleCount`, the sample's `chargingStatus` and the capability
 block's `reportsChargingStatus`/`chargingPositive` are the worked example: all were added in
 2026-09 as nullable fields **without** bumping the version, so "schema 2" alone does not tell you whether a file has
 them. Read them as nullable and absence as "not recorded", exactly as for any other optional key.

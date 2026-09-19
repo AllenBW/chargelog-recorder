@@ -22,6 +22,10 @@ class BatterySnapshots(private val bm: BatteryManager) {
          *  module's minSdk is 31. The value is an inlined string on every API, and like the two
          *  hidden cap keys below, the key is stable in AOSP's `BatteryManager.java`. */
         const val EXTRA_CHARGING_STATUS = "android.os.extra.CHARGING_STATUS"
+
+        /** `BatteryManager.EXTRA_CYCLE_COUNT` — public from API 34, above this module's minSdk,
+         *  and an inlined string on every API; read by its stable key for the same reason. */
+        const val EXTRA_CYCLE_COUNT = "android.os.extra.CYCLE_COUNT"
     }
 
     data class Sticky(
@@ -37,6 +41,9 @@ class BatterySnapshots(private val bm: BatteryManager) {
         /** The platform's charging attribution (`measure/ChargingStatus`), or null when the key
          *  was absent from this intent. Defaulted so a caller building a Sticky by hand compiles. */
         val chargingStatus: Int? = null,
+        /** The platform's battery cycle count (`EXTRA_CYCLE_COUNT`), or null when the key was
+         *  absent from this intent. Defaulted like [chargingStatus]. */
+        val cycleCount: Int? = null,
     )
 
     @Volatile var lastSticky: Sticky? = null
@@ -56,6 +63,7 @@ class BatterySnapshots(private val bm: BatteryManager) {
             maxChargingVoltageRaw = extra("max_charging_voltage"),
             atElapsedMs = SystemClock.elapsedRealtime(),
             chargingStatus = extra(EXTRA_CHARGING_STATUS),
+            cycleCount = extra(EXTRA_CYCLE_COUNT),
         )
     }
 

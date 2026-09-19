@@ -33,6 +33,37 @@ app produced it, which is why the field is there.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.3] — 2026-09-17
+
+Stamped with the ChargeLog app release that first ships it; the library has no version of its
+own yet (see Versioning).
+
+### Added
+
+- The session header carries `cycleCount`: `BatteryManager.EXTRA_CYCLE_COUNT` as the sticky
+  battery intent reported it at plug-in, nullable and absent when the platform does not supply
+  the key. Additive under the tolerant-decode contract, so the NDJSON schema stays 2 and the
+  Room projection is unchanged. Nothing host-visible: `RecorderHost` is untouched.
+
+## [0.3.2] — 2026-09-17
+
+Stamped with the ChargeLog app release that first ships it; the library has no version of its
+own yet (see Versioning).
+
+### Changed
+
+- `SettleDetector` resumes when the level rises above the level it settled at while the status is
+  still `CHARGING`, and from then on only a status (`FULL`, or `NOT_CHARGING` at the target) can
+  settle the session. The pinned-level predicate's 120 s hold is shorter than a top-of-charge level
+  increment (1.9–5.2 min measured on a Pixel Fold from 94 %), so it was settling in late CV and
+  releasing the wake lock ~7 min before the charge ended: the last ~2 % of every charge was
+  sampled at ~80 s instead of 1 s. The first pinned settle is unchanged, so a gauge that never
+  reports `FULL` still settles; only a settle contradicted by a subsequent rise is withdrawn. The
+  `capture_policy` event detail `"resumed"` already existed; no schema change.
+
+
 First public release in preparation. Everything below describes the state of the code as it is
 published, not a change from a previous public version — there isn't one.
 

@@ -49,6 +49,29 @@ class SettleDetectorTest {
     }
 
     @Test
+    fun `a level rise after a pinned settle resumes, and only a status settles it again`() {
+        val d = SettleDetector()
+        val climb = (0..30).map { s(it * 1000L, 97, BatteryStatus.CHARGING, 2_000_000) }
+        val at98 = (31..200).map { s(it * 1000L, 98, BatteryStatus.CHARGING, 200_000) }
+        val at99 = (201..400).map { s(it * 1000L, 99, BatteryStatus.CHARGING, 150_000) }
+        val at100 = (401..500).map { s(it * 1000L, 100, BatteryStatus.CHARGING, 100_000) }
+        val full = (501..700).map { s(it * 1000L, 100, BatteryStatus.FULL, 50_000) }
+        assertEquals(
+            listOf(SettleDetector.Transition.SETTLED, SettleDetector.Transition.RESUMED, SettleDetector.Transition.SETTLED),
+            drive(d, climb + at98 + at99 + at100 + full),
+        )
+    }
+
+    @Test
+    fun `a level rise while the status is FULL does not resume`() {
+        val d = SettleDetector()
+        val up = (0..30).map { s(it * 1000L, 99, BatteryStatus.CHARGING, 2_000_000) }
+        val full99 = (31..200).map { s(it * 1000L, 99, BatteryStatus.FULL, 50_000) }
+        val full100 = (201..300).map { s(it * 1000L, 100, BatteryStatus.FULL, 50_000) }
+        assertEquals(listOf(SettleDetector.Transition.SETTLED), drive(d, up + full99 + full100))
+    }
+
+    @Test
     fun `a trickle dip below the hold level is not a settle`() {
         val d = SettleDetector()
         val samples = (0..30).map { s(it * 1000L, 60, BatteryStatus.CHARGING, 2_000_000) } +
