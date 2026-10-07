@@ -9,6 +9,14 @@ import io.github.allenbw.chargelog.data.isWatch
 
 enum class ChargeSource { WIRED, WIRELESS, DOCK, UNKNOWN }
 
+/**
+ * @property peakW the largest power flowing INTO the battery over the session, or null when none
+ *   was. A plugged-in stretch can run the wrong way — the battery driving the device while the OS
+ *   still says charging — and such a sample is not a charging speed, so it cannot set this. Whether
+ *   a sample ran the wrong way is knowable only from [chargingPositive]: when that is null the
+ *   convention was never measured, [Units.signedWatts] yields no signed number rather than a
+ *   guessed one, and this falls back to the sign-insensitive magnitude it has always been.
+ */
 data class SessionFacts(
     val durationMs: Long?, val startLevel: Int?, val endLevel: Int?,
     val energyAh: Double?, val peakW: Double?, val maxTempC: Double?,
@@ -59,9 +67,23 @@ data class SessionFacts(
     val currentScale: CurrentScale = CurrentScale.MICRO_AMP,
 )
 
+private fun peakChargingW(
+    samples: List<SampleEntity>,
+    scale: CurrentScale,
+    chargingPositive: Boolean?,
+): Double? {
+    if (chargingPositive == null) {
+        return samples.mapNotNull { Units.watts(it.currentRaw, it.voltageRaw, scale) }.maxOrNull()
+    }
+    return samples.mapNotNull { Units.signedWatts(it.currentRaw, it.voltageRaw, scale, chargingPositive) }
+        .filter { it > 0.0 }.maxOrNull()
+}
+
 fun sessionFacts(session: SessionEntity, samples: List<SampleEntity>): SessionFacts {
     val scale = GaugeProfiles.byId(session.gaugeProfileId)?.currentScale ?: CurrentScale.MICRO_AMP
-    val peak = samples.mapNotNull { Units.watts(it.currentRaw, it.voltageRaw, scale) }.maxOrNull()
+    val signConvention = session.chargingPositive
+        ?: (GaugeProfiles.byId(session.gaugeProfileId) ?: GaugeProfiles.PHONE).chargingPositive
+    val peak = peakChargingW(samples, scale, signConvention)
     val maxT = samples.mapNotNull { Units.tempC(it.tempDeciC) }.maxOrNull()
     val ah = if (session.startChargeCounterRaw != null && session.endChargeCounterRaw != null)
         (session.endChargeCounterRaw - session.startChargeCounterRaw) / 1_000_000.0 else null
@@ -75,8 +97,7 @@ fun sessionFacts(session: SessionEntity, samples: List<SampleEntity>): SessionFa
         energyAh = ah, peakW = peak, maxTempC = maxT, source = source,
         counterKind = session.counterKind
             ?: (GaugeProfiles.byId(session.gaugeProfileId) ?: GaugeProfiles.PHONE).counterKind,
-        chargingPositive = session.chargingPositive
-            ?: (GaugeProfiles.byId(session.gaugeProfileId) ?: GaugeProfiles.PHONE).chargingPositive,
+        chargingPositive = signConvention,
         currentScale = scale,
     )
 }

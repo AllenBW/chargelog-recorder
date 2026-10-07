@@ -71,7 +71,6 @@ class LiveFeedTest {
         val snap = LiveFeed.state.value!!
         assertEquals(600, snap.recentWatts.size)
         assertEquals(600, snap.recentLevels.size)
-        // samples e=0..99 pushed out; e=100 is now the oldest retained
         assertEquals(100L, snap.recentLevels.first().first)
         assertEquals(699L, snap.recentLevels.last().first)
     }
@@ -94,7 +93,7 @@ class LiveFeedTest {
         repeat(700) { LiveFeed.onSample(sample(e = it * 1_000L)) }
 
         val snap = LiveFeed.state.value!!
-        assertEquals(700, snap.history.size)   // ring caps recentWatts at 600; history must not
+        assertEquals(700, snap.history.size)
         assertEquals(600, snap.recentWatts.size)
     }
 
@@ -116,7 +115,6 @@ class LiveFeedTest {
         LiveFeed.onSample(sample(e = 2000))
 
         LiveFeed.reset()
-        // onSample doesn't need a prior onOpen — it publishes a Snapshot unconditionally — so
         LiveFeed.onSample(sample(e = 6000))
         assertEquals(1, LiveFeed.state.value!!.history.size)
     }

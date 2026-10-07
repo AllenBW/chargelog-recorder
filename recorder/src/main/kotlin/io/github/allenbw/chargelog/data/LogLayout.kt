@@ -17,6 +17,7 @@ import java.io.File
 object LogLayout {
     const val RAWLOG = "rawlog"
     const val SYNCED = "synced"
+    const val IMPORTED = "imported"
 
     /** This device's own raw-log directory (`noBackupFilesDir/rawlog`) — the same path on a phone
      *  and on a watch; a device's own recordings never mix with `synced/`. */
@@ -24,6 +25,10 @@ object LogLayout {
 
     /** Sessions received from other devices, one subdirectory per `deviceId`. */
     fun syncedRoot(context: Context): File = File(context.noBackupFilesDir, SYNCED)
+
+    /** Sessions imported by hand, one subdirectory per `deviceId`, kept apart from [syncedRoot]
+     *  so where a file lives says how it arrived (see [LogDirs.importedRoot]). */
+    fun importedRoot(context: Context): File = File(context.noBackupFilesDir, IMPORTED)
 
     /** Where logs lived before this layout (`filesDir/rawlog`). */
     fun legacyPhoneDir(context: Context): File = File(context.filesDir, RAWLOG)

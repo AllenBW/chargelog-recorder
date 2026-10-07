@@ -125,6 +125,36 @@ class SessionFactsTest {
     }
 
     @Test
+    fun `peakW ignores a sample the battery was driving rather than receiving`() {
+        val samples = listOf(
+            sample(elapsedRealtimeMs = 0L, currentRaw = 1_000_000L, voltageRaw = 5_000),
+            sample(elapsedRealtimeMs = 1_000L, currentRaw = -3_000_000L, voltageRaw = 5_000),
+            sample(elapsedRealtimeMs = 2_000L, currentRaw = 2_000_000L, voltageRaw = 5_000),
+        )
+        val facts = sessionFacts(session(), samples)
+        assertEquals(10.0, facts.peakW!!, 0.0001)
+    }
+
+    @Test
+    fun `peakW is null when every sample ran the battery down`() {
+        val samples = listOf(
+            sample(elapsedRealtimeMs = 0L, currentRaw = -1_000_000L, voltageRaw = 5_000),
+            sample(elapsedRealtimeMs = 1_000L, currentRaw = -3_000_000L, voltageRaw = 5_000),
+        )
+        assertNull(sessionFacts(session(), samples).peakW)
+    }
+
+    @Test
+    fun `peakW keeps the magnitude when the sign convention was never measured`() {
+        val samples = listOf(
+            sample(elapsedRealtimeMs = 0L, currentRaw = -3_000_000L, voltageRaw = 5_000),
+            sample(elapsedRealtimeMs = 1_000L, currentRaw = 1_000_000L, voltageRaw = 5_000),
+        )
+        val unmeasured = sessionWith(gaugeProfileId = "gauge-unknown", deviceKind = DeviceKinds.WATCH)
+        assertEquals(15.0, sessionFacts(unmeasured, samples).peakW!!, 0.0001)
+    }
+
+    @Test
     fun `peakW is null when no samples have current and voltage`() {
         val samples = listOf(
             sample(elapsedRealtimeMs = 0L),
@@ -243,13 +273,13 @@ class SessionFactsTest {
     }
 
     @Test fun `negotiatedW is null under 50 mA`() {
-        assertEquals(null, negotiatedW(300, 5_000_000))          // Pixel Watch 1's bogus 300 µA
+        assertEquals(null, negotiatedW(300, 5_000_000))
         assertEquals(null, negotiatedW(49_999, 5_000_000))
         assertEquals(5.5, negotiatedW(1_100_000, 5_000_000)!!, 1e-9)
     }
 
     @Test fun `peakW applies the session's gauge scale`() {
-        val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)       // a Samsung mA reading
+        val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
         val phoneSession = sessionWith(gaugeProfileId = null)
         val secSession = sessionWith(gaugeProfileId = "gauge-sec", deviceKind = DeviceKinds.WATCH)
         assertEquals(0.0014, sessionFacts(phoneSession, listOf(s)).peakW!!, 1e-6)
@@ -258,17 +288,12 @@ class SessionFactsTest {
     }
 
     @Test fun `a detected-mA unknown gauge reads back in mA, not micro-amps`() {
-        // `GaugeProfiles.plausibility` writes `gauge-unknown-ma` into the header when it detects an
-        // mA gauge behind an UNKNOWN profile. Without a table entry of its own the id resolved back
-        // to `gauge-unknown` (µA) and the session read 1000x low — the exact failure the scale field
-        // exists to prevent, moved from record time to read time.
         val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
         val session = sessionWith(gaugeProfileId = "gauge-unknown-ma", deviceKind = DeviceKinds.WATCH)
         assertEquals(1.4, sessionFacts(session, listOf(s)).peakW!!, 1e-6)
     }
 
     @Test fun `an undeclared counter kind resolves through the gauge catalog, a declared one wins`() {
-        // Device pass 2026-09-08: schema-1 headers declare no capabilities, so the row's
         val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
         assertEquals("COULOMB", sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).counterKind)
         assertEquals("SOC_DERIVED", sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), listOf(s)).counterKind)
@@ -278,32 +303,23 @@ class SessionFactsTest {
     }
 
     @Test fun `the gauge's current scale is carried on the facts, resolved through the catalog`() {
-        // The scale was the one capability `sessionFacts` resolved internally and then threw away,
-        // so every consumer holding a SessionFacts had to re-derive it from the gauge id or — as
-        // Session Detail's efficiency cell and Deep Stats' weekly trend both did — assume microamps
-        // and read a milliamp gauge 1000x low (audit 2026-09-14).
         val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
         assertEquals(CurrentScale.MICRO_AMP, sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).currentScale)
         assertEquals(
             CurrentScale.MILLI_AMP,
             sessionFacts(sessionWith(gaugeProfileId = "gauge-sec", deviceKind = DeviceKinds.WATCH), listOf(s)).currentScale,
         )
-        // An id the catalog has never heard of takes the same microamp fallback the peak watts do.
         assertEquals(CurrentScale.MICRO_AMP, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).currentScale)
     }
 
     @Test fun `an undeclared sign convention resolves through the gauge catalog, a declared one wins`() {
-        // The counterKind rule one line up, applied to the sign: a schema-1 phone file and a
-        // pre-2026-09-08 watch file both declare nothing and both resolve through their gauge.
         val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
         assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).chargingPositive)
         assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
         val declared = sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH).copy(chargingPositive = false)
         assertEquals(false, sessionFacts(declared, listOf(s)).chargingPositive)
-        // An unmeasured gauge with no declaration stays honestly null.
         assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-sec", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
         assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-unknown", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
-        // An id the catalog has never heard of takes the same PHONE fallback as no id at all.
         assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).chargingPositive)
     }
 

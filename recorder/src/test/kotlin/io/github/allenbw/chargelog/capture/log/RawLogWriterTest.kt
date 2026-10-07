@@ -81,8 +81,6 @@ class RawLogWriterTest {
         assertTrue(java.io.File(tmp.root, EventLog.FILE_NAME).isFile)
     }
 
-    /** Delete-all's out-of-session half. The plug/unplug markers are a record of when the owner is
-     *  near a charger, so "remove every log file from this device" has to reach them. */
     @Test
     fun `clear deletes the event log`() {
         val log = EventLog(tmp.root)

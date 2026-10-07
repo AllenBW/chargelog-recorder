@@ -82,7 +82,7 @@ class IngestTest {
     fun `garbage is rejected with NO_HEADER and leaves nothing behind`() {
         val r = runBlocking { Replay.ingestExternal("not ndjson\n".byteInputStream(), dirs(), FakeCaptureDao()) }
         assertEquals(IngestResult.Rejected(IngestReasons.NO_HEADER), r)
-        assertEquals(emptyList<String>(), File(tmp.root, "synced").list()?.toList() ?: emptyList<String>()) // no device dirs
-        assertEquals(emptyList<String>(), File(tmp.root, "incoming").list()?.toList())             // scratch is empty
+        assertEquals(emptyList<String>(), File(tmp.root, "synced").list()?.toList() ?: emptyList<String>())
+        assertEquals(emptyList<String>(), File(tmp.root, "incoming").list()?.toList())
     }
 }

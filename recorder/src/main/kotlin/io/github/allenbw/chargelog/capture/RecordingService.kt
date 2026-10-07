@@ -25,10 +25,8 @@ import io.github.allenbw.chargelog.capture.log.EventLog
 import io.github.allenbw.chargelog.capture.log.RawLine
 import io.github.allenbw.chargelog.capture.log.RawLogWriter
 import io.github.allenbw.chargelog.data.LogLayout
-import io.github.allenbw.chargelog.data.Replay
 import io.github.allenbw.chargelog.measure.GaugeProfiles
 import io.github.allenbw.chargelog.measure.GaugeScaleProbe
-import io.github.allenbw.chargelog.measure.sessionFacts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -74,6 +72,7 @@ class RecordingService : Service() {
     private val inputs = Channel<CaptureInput>(Channel.UNLIMITED)
     private var inputPump: Job? = null
     private var tickJob: Job? = null
+    private var quietJob: Job? = null
 
     // TRAP docs/recording-service-threading.md — main-thread only; closes the orphan-ticker window
     private var plugged = false
@@ -94,11 +93,22 @@ class RecordingService : Service() {
 
     private lateinit var host: RecorderHost
 
-    @Volatile private var lastNotifiedText: String? = null
-    @Volatile private var lastNotifiedAtE: Long = 0
+    private val poster = ForegroundPoster(
+        build = { c: HostContent -> host.build(this, c) },
+        notify = { id, n -> getSystemService(NotificationManager::class.java).notify(id, n) },
+        promote = { id, n -> startForeground(id, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) },
+        cancel = { id -> getSystemService(NotificationManager::class.java).cancel(id) },
+        clock = SystemClock::elapsedRealtime,
+    )
 
-    @Volatile private var lastNotifiedChannelId: String? = null
-    @Volatile private var currentNotificationId: Int = NotificationIds.PRIMARY
+    private val quiet = QuietWatch(
+        clock = SystemClock::uptimeMillis,
+        repost = { LiveFeed.state.value?.sample?.let { poster.post(host.content(recordingState(it))) } },
+        rearm = {
+            Log.w(TAG, "tick loop gone while sampling on the tick; re-arming")
+            startTicking()
+        },
+    )
 
     private val thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
         thermalStatus = status
@@ -124,9 +134,10 @@ class RecordingService : Service() {
                 Intent.ACTION_POWER_DISCONNECTED -> {
                     plugged = false
                     stopTicking()
+                    quietJob?.cancel()
                     samplingMode = SamplingMode.TICK
                     submit(CaptureInput.PowerDisconnected(t, e))
-                    updateNotification(host.content(idleState()), force = true)
+                    poster.post(host.content(idleState()), force = true)
                 }
                 Intent.ACTION_BATTERY_CHANGED -> {
                     snapshots.onBatteryChanged(intent)
@@ -141,7 +152,7 @@ class RecordingService : Service() {
                     if (samplingMode == SamplingMode.EVENT && LiveFeed.state.value?.recording == true) {
                         val s = snapshots.sample(screenOn, hinge.latestDeg).copy(thermalStatus = thermalStatus)
                         submit(CaptureInput.Tick(s))
-                        updateNotification(host.content(recordingState(s)))
+                        poster.post(host.content(recordingState(s)))
                     }
                     snapshots.lastSticky?.let { host.onBatteryState(it.level, (it.plugged ?: 0) > 0, screenOn) }
                 }
@@ -198,19 +209,15 @@ class RecordingService : Service() {
             for (input in inputs) {
                 try {
                     execute(machine.on(input))
+                    if (input is CaptureInput.Tick) quiet.beat()
                 } catch (e: IOException) {
                     Log.w(TAG, "capture effect failed", e)
                 }
             }
         }
 
-        createChannel()
-        currentNotificationId = NotificationIds.PRIMARY
-        startForeground(
-            currentNotificationId,
-            host.build(this, host.content(idleState()).copy(notificationId = currentNotificationId)),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-        )
+        NotificationChannels.ensure(this)
+        poster.start(host.content(idleState()))
 
         registerReceiver(powerReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_POWER_CONNECTED)
@@ -240,7 +247,7 @@ class RecordingService : Service() {
         scope.launch {
             CapturePrefs.recordEnabledFlow(this@RecordingService).drop(1).collect {
                 if (LiveFeed.state.value?.recording != true) {
-                    updateNotification(host.content(idleState()), force = true)
+                    poster.post(host.content(idleState()), force = true)
                 }
             }
         }
@@ -249,7 +256,7 @@ class RecordingService : Service() {
             RawLogWriter.sessionFiles(logDir(this@RecordingService))
                 .lastOrNull()?.let { lastRecap = recapOf(it) }
             if (LiveFeed.state.value?.recording != true) {
-                updateNotification(host.content(idleState()), force = true)
+                poster.post(host.content(idleState()), force = true)
             }
         }
     }
@@ -258,6 +265,7 @@ class RecordingService : Service() {
 
     override fun onDestroy() {
         val ticks = stopTicking()
+        quietJob?.cancel()
         getSystemService(PowerManager::class.java).removeThermalStatusListener(thermalListener)
         unregisterReceiver(powerReceiver)
         hinge.stop()
@@ -287,6 +295,7 @@ class RecordingService : Service() {
         samplingMode = SamplingMode.TICK
         plugged = true
         startTicking()
+        watchQuiet()
     }
 
     private fun refreshSticky(): Intent? =
@@ -294,14 +303,26 @@ class RecordingService : Service() {
 
     private fun startTicking() {
         if (tickJob?.isActive == true) return
+        quiet.beat()
         tickJob = scope.launch {
             var first = true
             while (isActive) {
                 val s = snapshots.sample(screenOn, hinge.latestDeg).copy(thermalStatus = thermalStatus)
                 submit(CaptureInput.Tick(s))
-                updateNotification(host.content(recordingState(s)), force = first)
+                poster.post(host.content(recordingState(s)), force = first)
                 first = false
                 delay(tickMs)
+            }
+        }
+    }
+
+    private fun watchQuiet() {
+        quietJob?.cancel()
+        // TRAP docs/recording-service-threading.md — on main, and outlives stopTicking, or a lost resume goes unseen
+        quietJob = scope.launch(Dispatchers.Main) {
+            while (isActive) {
+                delay(QuietWatch.PERIOD_MS)
+                quiet.check(plugged && LiveFeed.state.value?.recording == true, samplingMode, tickJob?.isActive == true)
             }
         }
     }
@@ -351,7 +372,7 @@ class RecordingService : Service() {
                 if (closedFile != null) {
                     scope.launch(Dispatchers.IO) {
                         lastRecap = recapOf(closedFile)
-                        updateNotification(host.content(idleState()), force = true)
+                        poster.post(host.content(idleState()), force = true)
                     }
                 }
             }
@@ -374,23 +395,6 @@ class RecordingService : Service() {
         }
     }
 
-    private fun recapOf(file: File): SessionRecap? {
-        val parsed = Replay.parse(file) ?: return null
-        val endedAt = parsed.session.endedAtMs ?: parsed.samples.lastOrNull()?.wallClockMs ?: return null
-        val facts = sessionFacts(parsed.session, parsed.samples)
-        return SessionRecap(
-            endedAtMs = endedAt,
-            durationMs = facts.durationMs,
-            startLevel = facts.startLevel,
-            endLevel = facts.endLevel,
-            energyAh = facts.energyAh,
-            peakW = facts.peakW,
-            source = facts.source,
-            endReason = parsed.session.endReason,
-            sessionId = parsed.session.id,
-        )
-    }
-
     private fun idleState(): RecorderState.Idle =
         RecorderState.Idle(recap = lastRecap, recordEnabled = CapturePrefs.recordEnabled(this))
 
@@ -402,27 +406,5 @@ class RecordingService : Service() {
             lastRecap = lastRecap,
             recentLevels = snap?.recentLevels ?: emptyList(),
         )
-    }
-
-    private fun createChannel() = NotificationChannels.ensure(this)
-
-    private fun updateNotification(content: HostContent, force: Boolean = false) {
-        val key = content.dedupeKey
-        if (!force && (key == lastNotifiedText || SystemClock.elapsedRealtime() - lastNotifiedAtE < 5_000)) return
-        lastNotifiedText = key
-        lastNotifiedAtE = SystemClock.elapsedRealtime()
-        val channelChanged = lastNotifiedChannelId != null && lastNotifiedChannelId != content.channelId
-        lastNotifiedChannelId = content.channelId
-        val previousId = currentNotificationId
-        val id = NotificationIds.next(previousId, channelChanged)
-        currentNotificationId = id
-        val built = host.build(this, content.copy(notificationId = id))
-        // TRAP docs/traps/foreground-notification-ids.md — swap ids, never stopForeground
-        if (channelChanged) {
-            startForeground(id, built, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            getSystemService(NotificationManager::class.java).cancel(previousId)
-        } else {
-            getSystemService(NotificationManager::class.java).notify(id, built)
-        }
     }
 }

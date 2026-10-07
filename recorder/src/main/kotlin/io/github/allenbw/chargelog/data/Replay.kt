@@ -8,7 +8,6 @@ import io.github.allenbw.chargelog.capture.log.EventKinds
 import io.github.allenbw.chargelog.capture.log.EventLog
 import io.github.allenbw.chargelog.capture.log.NdjsonCodec
 import io.github.allenbw.chargelog.capture.log.RawLine
-import io.github.allenbw.chargelog.capture.log.RawLogWriter
 import io.github.allenbw.chargelog.measure.GaugeProfiles
 import io.github.allenbw.chargelog.measure.Units
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +33,7 @@ object EndReasonsForReplay {
  */
 object Replay {
 
-    private val mutex = Mutex()
+    internal val mutex = Mutex()
 
     data class Parsed(val session: SessionEntity, val samples: List<SampleEntity>)
 
@@ -122,7 +121,7 @@ object Replay {
         mutex.withLock {
             dao.clearAll()
             var count = 0
-            for (dir in dirs.all()) for (f in RawLogWriter.sessionFiles(dir)) {
+            for (dir in dirs.all()) for (f in dirs.projectable(dir)) {
                 val p = try { parse(f) } catch (_: IOException) { null } ?: continue
                 if (!admit(p, dao, dirs)) continue
                 dao.upsertSession(p.session)
@@ -147,7 +146,7 @@ object Replay {
                 val known = states
                     .filter { it.deviceId == dirDeviceId || (dirDeviceId == null && it.deviceId == dirs.localDeviceId) }
                     .associateBy { it.sourceFile }
-                for (f in RawLogWriter.sessionFiles(dir)) {
+                for (f in dirs.projectable(dir)) {
                     val k = known[f.name]
                     if (k != null && k.endReason != EndReasonsForReplay.TRUNCATED) continue
                     val p = try { parse(f) } catch (_: IOException) { null } ?: continue
@@ -162,20 +161,22 @@ object Replay {
     }
 
     /**
-     * Deletes a session completely from its own [LogDirs] directory: raw file FIRST,
-     * then rows — a DB-only delete would resurrect at the next launch, since [reconcile]
-     * re-projects any session file it finds on disk. Returns false, leaving the rows untouched,
-     * if the file exists but can't be deleted; a file that's already gone is treated as already
-     * deleted and the rows are removed as normal.
+     * Deletes a session completely: every copy of its raw file first (this device's own, or a
+     * foreign session's imported and synced copies alike), then rows — a DB-only delete would
+     * resurrect at the next launch, since [reconcile] re-projects any session file it finds on
+     * disk, and so would a copy left in the other root. A foreign session's synced copy goes
+     * before its imported one, and the first copy that cannot be deleted stops the delete, so a
+     * failure never leaves a synced copy standing where its import was: the session stays imported.
+     * Returns false, leaving the rows untouched, if any copy remains on disk; a file that's
+     * already gone counts as deleted.
      */
     suspend fun deleteSessionCompletely(dirs: LogDirs, dao: CaptureDao, session: SessionEntity): Boolean =
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 withContext(NonCancellable) {
-                    val f = File(dirs.dirFor(session), session.sourceFile)
-                    if (f.exists() && !f.delete()) return@withContext false
-                    dao.deleteSession(session.id)
-                    true
+                    val gone = dirs.copiesOf(session).all { !it.exists() || it.delete() }
+                    if (gone) dao.deleteSession(session.id)
+                    gone
                 }
             }
         }

@@ -114,6 +114,10 @@ current SCALE from this session's own first samples — `detail` is
 `"gaugeProfileId=gauge-unknown-ma"`; see below), and `cadence` (the effective sample interval from
 this line forward, so a reader never has to infer it from timestamp deltas alone).
 
+The rolling `events.ndjson` lives outside every session, and clearing the device's logs deletes it
+too: its plug and unplug markers are a record of when the owner is near a charger, so "remove every
+log file from this device" has to reach them.
+
 ### `gauge_scale` and a provisional `gaugeProfileId`
 
 A header is written at plug-in, before the session has taken a single sample, so anything the
@@ -129,6 +133,30 @@ never appears in a file whose header was already right, and its absence means th
 
 Every session after the one that learned it simply opens with the resolved profile in its header,
 so this line is rare: at most one file per device ever carries it.
+
+`gauge-unknown-ma` has a catalog entry of its own and exists for this line alone: `forDevice` never
+selects it. Without the entry the id resolved back to `gauge-unknown` (µA) and the session that
+learned the scale was the one session read a thousand times low.
+
+### Reading a file whose header says less
+
+- **An unknown or absent `gaugeProfileId` keeps the microamp, PHONE convention** for the scale,
+  the peak watts, the sign and the CSV export — the convention every existing file was written
+  under, so no already-exported session changes meaning, and an id from a newer recorder or a
+  corrupted line falls back rather than to null.
+- **An undeclared capability resolves through the gauge catalog; a declared one wins.** Schema-1
+  headers and pre-2026-09-08 watch files declare no `counterKind` or `chargingPositive`, so both
+  come from the profile; an unmeasured gauge with no declaration stays null.
+- **The scale is the one calibration fact the recorder keeps open.** Its own settle rule reads
+  current in real watts and cannot work without it. Noise floors, smoothing, cadence and names are
+  the host's, keyed by the profile id. `SessionFacts.currentScale` carries the resolved scale, so a
+  consumer never re-derives it from the id or assumes microamps (audit 2026-09-14). A profile
+  stores `counterKind` as the header's own string, so a reader needs no `capture` import.
+- **The session row carries `osRelease` and `appVersion`** from the header since recorder Room
+  version 3. Before, nothing persisted them, and a synced watch row was read under the phone's
+  Android version.
+- **A host that does not know its cell size records no `designCapacityMah`**, never a nominal
+  figure.
 
 ## Discharge line (`discharge.ndjson`)
 

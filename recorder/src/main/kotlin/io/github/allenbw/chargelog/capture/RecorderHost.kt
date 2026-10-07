@@ -118,6 +118,15 @@ interface RecorderHost {
      * [HostContent.dedupeKey]: unless the key changed AND at least 5 s passed since the last
      * post (transitions bypass the gate), [build] is not called.
      *
+     * Also called again, about once a minute of awake time, while a session samples on the tick and
+     * no tick has completed in that long — with the last sample the recorder recorded, so its `t`
+     * is old (the recorder also restarts its tick loop if it finds it gone). That is the only way a
+     * host can show that the recorder has gone quiet: a stopped tick loop never calls this, and the
+     * notification it last posted would otherwise stand as if the recorder were fine. A host that
+     * wants to say so compares the sample's `t` with its own clock; one that does not returns the
+     * same content and the gate drops it. Nothing changes once a session settles to event sampling,
+     * where silence means the battery has not changed.
+     *
      * "Thread-safe" here means: **compute from [state] and return; do not touch shared mutable
      * state.** Three threads call this, and the recorder makes no promise about which, in what
      * order, or how they interleave. The pattern to copy is `:sample`'s — pure computation from

@@ -21,18 +21,12 @@ class GaugeProfileTest {
     }
 
     @Test fun `counterKind strings match the header vocabulary`() {
-        // The profile carries a plain string rather than the enum-like constant so a reader above
-        // this module needs no capture/ import; this pins the two vocabularies together.
         assertEquals(CounterKinds.COULOMB, GaugeProfiles.PHONE.counterKind)
         assertEquals(CounterKinds.SOC_DERIVED, GaugeProfiles.QBG.counterKind)
         assertEquals(CounterKinds.SOC_DERIVED, GaugeProfiles.SEC.counterKind)
         assertNull(GaugeProfiles.UNKNOWN.counterKind)
     }
 
-    /** The scale is the one calibration-shaped fact that stays open: the recorder's own settle
-     *  rule reads current in real watts, so it cannot work without it. Everything else a reader
-     *  needs about a gauge — noise floor, smoothing window, cadence, tier, name — is the host's,
-     *  keyed by these ids. */
     @Test fun `each profile declares the scale its raw current is in`() {
         assertEquals(CurrentScale.MICRO_AMP, GaugeProfiles.PHONE.currentScale)
         assertEquals(CurrentScale.MICRO_AMP, GaugeProfiles.QBG.currentScale)
@@ -46,7 +40,6 @@ class GaugeProfileTest {
         assertSame(GaugeProfiles.QBG, GaugeProfiles.forDevice("google", "Pixel Watch 2", isWatch = true))
         assertSame(GaugeProfiles.SEC, GaugeProfiles.forDevice("samsung", "SM-R960", isWatch = true))
         assertSame(GaugeProfiles.UNKNOWN, GaugeProfiles.forDevice("Mobvoi", "TicWatch Pro 5", isWatch = true))
-        // The detected-mA entry exists for `plausibility`'s header id alone; the bundled table
         assertTrue("forDevice never selects the detected-mA entry", listOf("Mobvoi", "Google", "samsung", "OnePlus").none {
             GaugeProfiles.forDevice(it, "a watch", isWatch = true) === GaugeProfiles.UNKNOWN_MA
         })

@@ -166,7 +166,6 @@ class ReplayReconcileTest {
 
     @Test
     fun `deleteSessionCompletely returns false and leaves rows untouched when the file can't be deleted`() {
-        // A non-empty directory in place of the file makes File#delete() fail.
         val dirAsFile = File(tmp.root, "session-1000.ndjson")
         dirAsFile.mkdir()
         File(dirAsFile, "child").writeText("stray")
@@ -206,8 +205,6 @@ class ReplayReconcileTest {
         assertEquals(listOf(1000L), dao.deleteSessionRowCalls)
     }
 
-    // --- multi-directory / cross-device ---
-
     @Test
     fun `reconcile projects the phone dir and every synced device dir`() {
         writeSession(header(1000L), sample(2000L, 20L, 50), event(3000L, 30L, EventKinds.SESSION_END))
@@ -232,7 +229,7 @@ class ReplayReconcileTest {
         val count = runBlocking { Replay.reconcile(dirs(), dao) }
 
         assertEquals(1, count)
-        assertEquals(null, dao.sessions.getValue(1000L).deviceId)      // the phone's row survived untouched
+        assertEquals(null, dao.sessions.getValue(1000L).deviceId)
         assertEquals(50, dao.samplesBySession.getValue(1000L).single().level)
         val events = File(tmp.root, "events.ndjson").readLines().map { NdjsonCodec.decode(it) as RawLine.Event }
         assertEquals(EventKinds.INGEST_CONFLICT, events.single().kind)

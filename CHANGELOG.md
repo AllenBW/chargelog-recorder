@@ -10,12 +10,16 @@ Notable changes to the ChargeLog recorder. Format loosely follows
 
 ## Versioning
 
-Three version numbers travel with this library, and they move independently.
+Three version numbers travel with this library.
 
-**The library's own version** follows semantic versioning against the `RecorderHost` seam and the
-public API of `capture/`, `data/`, and `measure/`. A major bump means a host has to change code.
-There is no published Maven artifact yet — consumers vendor the source or depend on the module
-directly — so today the number is documentation, not coordinates.
+**The library's version is the app's.** Every ChargeLog release `X.Y.Z` is also a recorder
+release `X.Y.Z`: the section below is stamped as part of the app's release, and this repository
+carries the tag `vX.Y.Z` and a GitHub Release whose notes are that section, published by the same
+sync that carries it. A release with no recorder change still gets a section saying so, so the
+two numbers never drift. What a host compiles against is the `RecorderHost` seam and the public
+API of `capture/`, `data/`, and `measure/`; a change that makes a host change code is called out
+in its section. There is no published Maven artifact — consumers vendor the source or depend on
+the module directly — so the tag is the coordinate.
 
 **The NDJSON schema version** (`schema` in every session log's header, currently **2**) is a plain
 integer with its own contract, described in `docs/ndjson-format.md`: decoding is tolerant, so an
@@ -33,7 +37,78 @@ app produced it, which is why the field is there.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`LogDirs.importedRoot`: imported logs can live apart from synced ones.** A new five-argument
+  `LogDirs` constructor takes an `importedRoot` (read back through the `importedRoot` property, null
+  by default), with `LogDirs.importedDir(deviceId)`, `LogLayout.importedRoot(context)` and
+  `LogDirs.of(context, separateImports = true)`, and `LogDirs.importedCopy(session)` naming a
+  session's imported file. The existing constructor and `LogDirs.of(context)` keep their exact
+  signatures (`@JvmOverloads`), so a host compiled against an earlier release still links. With
+  the root set:
+  - `Replay.ingestExternal` moves an imported log to `<importedRoot>/<deviceId>/` instead of
+    `synced/<deviceId>/` and refuses a session either root already holds with the new
+    `IngestReasons.DUPLICATE` (an empty or headerless stub does not count as held). Its checks,
+    move and projection now run under the same lock as `reconcile` and the deletes.
+  - `all()` lists the imported directories after the synced ones, so `reconcile` and `projectAll`
+    project them, and both skip a synced file whose imported twin exists: the import shadows it and
+    both stay on disk.
+  - `Replay.deleteImportedCopy` and `Replay.deleteSyncedCopy` delete one root's copy by its explicit
+    path, under the lock. A reconcile after `deleteImportedCopy` reveals a shadowed synced copy.
+    `deleteImportedCopy` returns false and does nothing without the root, and never drops the row
+    of a session held only as synced.
+  - `deleteSessionCompletely` deletes a session's synced copy before its imported one, stops at
+    the first that cannot go, and keeps the rows while a copy remains, so a failure leaves the
+    session imported.
+  The directory records how a log arrived: an import written into `synced/<deviceId>/` lands on the
+  exact path a sync receiver appends to and resumes from. Files already on disk are never moved. A
+  host that does not set the root sees no change. No NDJSON, Room or `RecorderHost` change.
+
+### Changed
+
+- **The foreground notification is rebuilt when the tick loop goes quiet.** While a session is
+  sampling on the tick, `RecordingService` checks about once a minute of awake time whether a tick
+  has been recorded; if none has, it calls `RecorderHost.content` again with the last sample it
+  recorded, posts the result through the usual dedupe gate, and — if the tick loop is gone — logs
+  and starts it again. Before this, a tick loop that stopped while the service lived left the last
+  notification standing, as if the recorder were fine, because nothing called `content()` again,
+  and nothing restarted it until the next plug event. Nothing changes after a session settles to event sampling,
+  where silence means the battery has not changed. No member of `RecorderHost` and no seam type
+  changes: a host that computes from its argument, as the `content()` contract requires, is handed
+  an input it has seen, returns the same key, and the gate drops it. A host that wants to show a
+  quiet recorder compares the sample's `t` with its own clock.
+  `docs/recording-service-threading.md` "The quiet re-post" has the reasoning.
+
+- **Foreground posts are serialized, and a service start records its channel.** Two posts racing
+  from different threads could leave two ongoing notifications in the shade; they now take turns.
+  A service that restarts mid-charge now swaps notification ids on its first recording post, as
+  every other idle-to-recording change does, instead of updating its idle notification in place.
+  No host-visible API change.
+
+## [0.5.0] — 2026-10-02
+
+No recorder change. Stamped because every ChargeLog release is a recorder release of the same
+number (see Versioning). The app's 0.5.0 changes — negotiated power judged from the held cap with a
+plausibility ceiling, a phone-only "in a case" tag, a withdrawal that runs to the end, and the Fold
+pass fixes (efficiency without the Adaptive hold, no zero-length STARTUP span) — live outside the
+recorder; `RecorderHost`, the NDJSON schema (2) and the Room projection (5) are untouched.
+
+## [0.4.0] — 2026-09-21
+
+### Changed
+
+- **`SessionFacts.peakW` is the largest power flowing INTO the battery, not the largest magnitude.**
+  A plugged-in stretch can run the wrong way — the battery driving the device while the OS still
+  reports charging — and such a sample is not a charging speed, so it can no longer set the peak.
+  When every sample reads that way the field is now `null` rather than a drain reported as a
+  charge. Behaviour is unchanged wherever `chargingPositive` is null: an unmeasured sign convention
+  still yields the sign-insensitive magnitude, because `Units.signedWatts` gives no signed number
+  rather than a guessed one. `Units.watts` itself is untouched, and every other watt on every
+  screen and in every golden stays byte-identical.
+
+  Hosts reading `peakW` should expect `null` on a session that never charged. On the two real
+  captures in the corpus this changes nothing — both contain draining samples (12 of 4,045 and 70
+  of 7,455) and in neither does one win the peak.
 
 ## [0.3.3] — 2026-09-17
 

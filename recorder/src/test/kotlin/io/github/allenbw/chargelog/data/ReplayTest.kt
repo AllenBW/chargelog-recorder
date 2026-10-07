@@ -56,9 +56,6 @@ class ReplayTest {
 
     @Test
     fun `a gauge_scale event outranks the header's provisional profile`() {
-        // A header goes out at plug-in, before the session has a single sample, so a scale the
-        // samples revealed cannot be in it (audit 2026-09-14). Without this preference the one
-        // session that LEARNED the scale is the one session that reads a thousand times low.
         val f = write("session-42.ndjson", listOf(
             header.copy(gaugeProfileId = "gauge-unknown"),
             RawLine.Event(t = 42, e = 0, kind = EventKinds.SESSION_START),
@@ -71,8 +68,6 @@ class ReplayTest {
 
     @Test
     fun `an unreadable gauge_scale event leaves the header standing`() {
-        // A session with a gauge beats a session without one, so an id this build does not know —
-        // a newer recorder's table, a corrupted line — falls back rather than to null.
         val f = write("session-42.ndjson", listOf(
             header.copy(gaugeProfileId = "gauge-qbg"),
             RawLine.Event(t = 1_042, e = 1_000, kind = EventKinds.GAUGE_SCALE, detail = "gaugeProfileId=gauge-from-the-future"),
@@ -219,9 +214,6 @@ class ReplayTest {
 
     @Test
     fun `parse carries the recording device's own software and hardware class into the row`() {
-        // The row is the only thing the donation envelope reads, and before Room version 3 it
-        // held no OS release or app version at all — so a synced watch row was published under
-        // the PHONE's Android version. The header has always carried both; now the row does too.
         val hw = header.copy(
             schema = 2, deviceKind = DeviceKinds.WATCH, osRelease = "17", appVersion = "0.2.0",
             socModel = "Tensor W1", totalMemBytes = 2_000_000_000L, designCapacityMah = 306,

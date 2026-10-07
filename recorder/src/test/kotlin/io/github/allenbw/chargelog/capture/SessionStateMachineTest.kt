@@ -195,7 +195,6 @@ class SessionStateMachineTest {
         val h = fx.filterIsInstance<CaptureEffect.OpenLog>().single().header
         assertEquals(null, h.socModel)
         assertEquals(null, h.totalMemBytes)
-        // A host that does not know its cell size records nothing rather than a nominal figure.
         assertEquals(null, h.designCapacityMah)
         assertEquals(null, h.cycleCount)
     }
@@ -232,12 +231,12 @@ class SessionStateMachineTest {
         m.on(CaptureInput.PowerConnected(t = 1, e = 0))
         for (i in 1..30) m.on(CaptureInput.Tick(charging(i * 1000L, 99)))
         for (i in 31..200) m.on(CaptureInput.Tick(full(i * 1000L)))
-        val quiet = m.on(CaptureInput.Tick(full(210_000L)))          // 10 s after the last sample
+        val quiet = m.on(CaptureInput.Tick(full(210_000L)))
         assertTrue(quiet.filterIsInstance<CaptureEffect.Append>().map { it.line }.filterIsInstance<RawLine.Event>().none { it.kind == EventKinds.GAP })
         val resume = m.on(CaptureInput.Tick(charging(211_000L, 99, ua = 700_000)))
         assertTrue(resume.contains(CaptureEffect.AcquireWakeLock))
         assertTrue(resume.contains(CaptureEffect.SetSampling(SamplingMode.TICK)))
-        val late = m.on(CaptureInput.Tick(charging(221_000L, 99, ua = 700_000)))   // 10 s > 3 × 1 s → gap again
+        val late = m.on(CaptureInput.Tick(charging(221_000L, 99, ua = 700_000)))
         assertTrue(late.filterIsInstance<CaptureEffect.Append>().map { it.line }.filterIsInstance<RawLine.Event>().any { it.kind == EventKinds.GAP })
     }
 
@@ -248,8 +247,6 @@ class SessionStateMachineTest {
         for (i in 1..30) m.on(CaptureInput.Tick(charging(i * 1000L, 99)))
         for (i in 31..200) m.on(CaptureInput.Tick(full(i * 1000L)))
         m.on(CaptureInput.PowerDisconnected(t = 300_000, e = 299_000))
-        // Opening declares TICK, so a stale SetSampling(EVENT) from the session that just closed
-        // can never leave the next one tickerless: the open's own effect comes after it in queue
         val open = m.on(CaptureInput.PowerConnected(t = 301_000, e = 300_000))
         assertTrue(open.contains(CaptureEffect.SetSampling(SamplingMode.TICK)))
         assertTrue(m.recording)

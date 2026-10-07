@@ -209,17 +209,14 @@ class ExportCsvTest {
             "ChargeLog",
         ).trimEnd('\n').lines().drop(2).single().split(",")
 
-        val phone = rowFor(GaugeProfiles.PHONE.id)   // microamp gauge
-        val watch = rowFor(GaugeProfiles.SEC.id)     // milliamp gauge
-        // watts column (index 2), current_ua column (index 6)
+        val phone = rowFor(GaugeProfiles.PHONE.id)
+        val watch = rowFor(GaugeProfiles.SEC.id)
         assertEquals("0.004", phone[2])
         assertEquals("4.200", watch[2])
         assertEquals("1000", phone[6])
         assertEquals("1000000", watch[6])
     }
 
-    /** An unknown or absent gauge id keeps the microamp convention every existing file was
-     *  written under, so no already-exported session changes meaning. */
     @Test
     fun `an unknown gauge id falls back to microamps`() {
         val row = ExportCsv.csv(
