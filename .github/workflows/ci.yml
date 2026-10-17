@@ -6,8 +6,10 @@
 # request. In the repository this tree is mirrored FROM it sits one level down and stays inert,
 # which is why nothing here depends on that repository's tooling — :sample and the wrapper travel
 # with this tree and are all either job needs. Both jobs were written to be correct on day one of
-# the mirror, because the first run is attached to an orphan founding commit nobody can amend;
-# they have been green since.
+# the mirror, because the first run is attached to an orphan founding commit nobody can amend.
+# `build` went red at the 2026-09-16 sync and stayed red through 0.7.0's: the
+# `sdkmanager tools` that android-actions/setup-android@v3 runs stopped resolving ("Failed to find
+# package 'tools'"), so the job now uses the SDK the runner image already ships at $ANDROID_HOME.
 name: ci
 on:
   push:
@@ -26,8 +28,8 @@ jobs:
       # amended: a future release that tightens the lint, or moves past REUSE 3.3, would put a
       # permanent red X on it. 6.2.0 is the version the tree is verified against.
       - run: pipx run reuse==6.2.0 lint
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+      - run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
       - name: Library unit tests + sample assembly
         run: ./gradlew :recorder:testDebugUnitTest :sample:assembleDebug --no-daemon
