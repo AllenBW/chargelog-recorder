@@ -32,9 +32,9 @@ enum class CurrentScale(val toMicroAmps: Double) { MICRO_AMP(1.0), MILLI_AMP(1_0
  *   declared only where the gauge itself was measured: `true` on the Pixel Watch 5 (1,914 of 1,927
  *   charging samples positive, projection DB pulled 2026-09-08); null everywhere else, which
  *   [Units.signedWatts] turns into no signed number rather than a guessed sign. No phone profile
- *   declares one. `gauge-phone` once said `true` from the owner's own Pixel and a tester's phone
- *   proved it a property of the device, not of "a phone": 7,446 of its 7,464 samples negative
- *   while the counter rose. A phone's convention is read from each session's own evidence instead
+ *   declares one. `gauge-phone` once said `true` from the owner's own Pixel, but the convention is
+ *   a property of the device, not of "a phone": some phones report charging as negative. A
+ *   phone's convention is read from each session's own evidence instead
  *   ([SignEvidence], applied by [sessionFacts]). Defaulted, so a host constructing or copying a
  *   profile keeps compiling (CONTRIBUTING.md's seam rule).
  */

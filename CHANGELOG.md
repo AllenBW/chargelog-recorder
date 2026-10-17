@@ -39,7 +39,7 @@ app produced it, which is why the field is there.
 
 ## [0.7.0] — 2026-10-14
 
-The app's 0.7.0 also carries the phone-side fix for the "Receive from watch" crash (#368): a
+The app's 0.7.0 also carries the phone-side fix for the "Receive from watch" crash: a
 vendor Bluetooth stack that refuses the listen call with `SecurityException` now ends the window
 instead of the process, and the phone declares the legacy `BLUETOOTH` permission. Host-side; the
 recorder changes are below. **Room version 6** drops the projection once at the next reconcile.
@@ -63,8 +63,8 @@ recorder changes are below. **Room version 6** drops the projection once at the 
 
 - A phone is no longer assumed charging-positive. `GaugeProfiles.PHONE.chargingPositive` is now
   null, so new phone headers no longer declare a guess, and `sessionFacts` reads a phone session's
-  sign from `SignEvidence`, ignoring the header (every phone header ever written said `true`). A
-  phone that reports charging as negative showed ~4 W peaks against true 15–16 W.
+  sign from `SignEvidence`, ignoring the header (every phone header ever written said `true`). On
+  a phone that reports charging as negative, that guess read the peak far below the true one.
 - `Replay.parse` re-judges a `gauge-phone` log with no `gauge_scale` event by the same phone rule,
   so a milliamp phone's old logs stop reading a thousand times low. **Room version 6** changes no
   column; it exists to drop the projection once so every log is re-parsed at the next reconcile.

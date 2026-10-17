@@ -195,11 +195,10 @@ the gauge table existed, on the recorder's own Pixel) is never re-judged.
   one, the level — says which way charge moved over the session; the time-integrated current must
   have moved the same way, so if it did a positive current means charging, and if it ran opposite a
   negative one does. Until 2026-10-14 every phone header said `true`, copied from a table built on
-  the owner's Pixel; a tester's phone reports charging as negative (7,446 of 7,464 samples while the
-  counter rose), so its peak read 4.29 W against a true 15.22 W. The rule answers null — no signed
-  watts, and a peak that falls back to magnitude — when the counter and level did not move, moved
-  opposite ways, or the current mostly cancelled (less than half the integrated charge net in one
-  direction). In the corpus every charge clears that share at 0.97 or more, and the five sessions
+  the owner's Pixel; on a phone that reports charging as negative, that guess read the peak far
+  below the true one. The rule answers null — no signed watts, and a peak that falls back to
+  magnitude — when the counter and level did not move, moved opposite ways, or the current mostly
+  cancelled (less than half the integrated charge net in one direction). In the corpus every charge clears that share at 0.97 or more, and the five sessions
   it leaves null are all holds at 100 % on the owner's Pixel, which read their peak by magnitude
   again, as every session did before the sign existed.
 - **The scale is the one calibration fact the recorder keeps open.** Its own settle rule reads

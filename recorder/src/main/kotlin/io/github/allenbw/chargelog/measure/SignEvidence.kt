@@ -13,9 +13,8 @@ import kotlin.math.sign
  * The rule is an identity, not a heuristic: the charge counter (or, without one, the level) says
  * which way charge moved over the session, and the time-integrated current must have moved the
  * same way. If it did, positive means into the battery; if it ran opposite, negative does. A
- * tester's phone that reports charging as negative — 7,446 of 7,464 samples below zero while its
- * counter climbed — and the owner's charging-positive Pixel both read correctly, from the same
- * rule, with no device table.
+ * phone that reports charging as negative and the owner's charging-positive Pixel both read
+ * correctly, from the same rule, with no device table.
  *
  * It answers null — no convention, so [Units.signedWatts] yields nothing and a peak falls back to
  * magnitude — whenever the session cannot show it: no counter or level movement, a counter and a

@@ -47,8 +47,8 @@ data class SessionFacts(
      *
      * On a phone gauge (`gauge-phone`, `gauge-phone-ma`, or a header with no profile id) it is
      * the session's own evidence, [SignEvidence], and the header is not consulted: every phone
-     * header written before this rule declared the catalog's `true`, which was a guess, and one
-     * tester's phone is the opposite. Elsewhere it resolves like [counterKind] — the header's
+     * header written before this rule declared the catalog's `true`, which was a guess, and some
+     * phones report the opposite. Elsewhere it resolves like [counterKind] — the header's
      * declaration when it made one, else the gauge catalog's measured convention, else null.
      * Defaulted for the seam's stability rule.
      */
