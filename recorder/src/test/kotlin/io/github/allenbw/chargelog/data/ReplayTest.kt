@@ -66,6 +66,34 @@ class ReplayTest {
         assertEquals("gauge-unknown-ma", Replay.parse(f)!!.session.gaugeProfileId)
     }
 
+    private fun phoneCharge(currentRaw: Long, n: Int = 400) = (0 until n).map {
+        RawLine.Sample(t = 42L + it * 1_000L, e = it * 1_000L, currentRaw = currentRaw, level = 40 + it / 72, scale = 100, status = 2)
+    }
+
+    @Test
+    fun `a phone log whose own charge proves a milliamp gauge is read at mA`() {
+        val f = write("session-42.ndjson", listOf(header.copy(schema = 2, gaugeProfileId = "gauge-phone")) + phoneCharge(2_000L))
+        assertEquals("gauge-phone-ma", Replay.parse(f)!!.session.gaugeProfileId)
+    }
+
+    @Test
+    fun `a microamp phone log, a hold, and a legacy header all keep the id they were written with`() {
+        val ua = write("session-42.ndjson", listOf(header.copy(schema = 2, gaugeProfileId = "gauge-phone")) + phoneCharge(2_000_000L))
+        assertEquals("gauge-phone", Replay.parse(ua)!!.session.gaugeProfileId)
+        val hold = phoneCharge(2_000L).map { it.copy(level = 80) }
+        val held = write("session-43.ndjson", listOf(header.copy(sessionStartWallClockMs = 43, schema = 2, gaugeProfileId = "gauge-phone")) + hold)
+        assertEquals("gauge-phone", Replay.parse(held)!!.session.gaugeProfileId)
+        val legacy = write("session-44.ndjson", listOf(header.copy(sessionStartWallClockMs = 44)) + phoneCharge(2_000L))
+        assertNull(Replay.parse(legacy)!!.session.gaugeProfileId)
+    }
+
+    @Test
+    fun `a gauge_scale event naming the phone mA entry is read back`() {
+        val f = write("session-42.ndjson", listOf(header.copy(schema = 2, gaugeProfileId = "gauge-phone")) + phoneCharge(2_000L) +
+            RawLine.Event(t = 500_000L, e = 400_000L, kind = EventKinds.GAUGE_SCALE, detail = "gaugeProfileId=gauge-phone-ma"))
+        assertEquals("gauge-phone-ma", Replay.parse(f)!!.session.gaugeProfileId)
+    }
+
     @Test
     fun `an unreadable gauge_scale event leaves the header standing`() {
         val f = write("session-42.ndjson", listOf(

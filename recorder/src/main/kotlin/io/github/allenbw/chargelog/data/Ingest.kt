@@ -3,6 +3,8 @@
 
 package io.github.allenbw.chargelog.data
 
+import io.github.allenbw.chargelog.capture.log.NdjsonCodec
+import io.github.allenbw.chargelog.capture.log.RawLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.withLock
@@ -99,7 +101,13 @@ private suspend fun Replay.refusal(
     }
 }
 
-private fun Replay.held(dirs: LogDirs, deviceId: String, name: String): Boolean =
+private fun held(dirs: LogDirs, deviceId: String, name: String): Boolean =
     listOf(dirs.syncedDir(deviceId), dirs.importedDir(deviceId)).map { File(it, name) }.any { f ->
-        f.exists() && try { parse(f) != null } catch (_: IOException) { false }
+        f.exists() && try { hasHeader(f) } catch (_: IOException) { false }
     }
+
+private fun hasHeader(file: File): Boolean = file.useLines { lines ->
+    lines.any { raw ->
+        raw.isNotBlank() && try { NdjsonCodec.decode(raw) is RawLine.Header } catch (_: Exception) { false }
+    }
+}

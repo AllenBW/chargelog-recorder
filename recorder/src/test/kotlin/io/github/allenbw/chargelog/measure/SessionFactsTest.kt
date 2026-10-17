@@ -131,7 +131,7 @@ class SessionFactsTest {
             sample(elapsedRealtimeMs = 1_000L, currentRaw = -3_000_000L, voltageRaw = 5_000),
             sample(elapsedRealtimeMs = 2_000L, currentRaw = 2_000_000L, voltageRaw = 5_000),
         )
-        val facts = sessionFacts(session(), samples)
+        val facts = sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), samples)
         assertEquals(10.0, facts.peakW!!, 0.0001)
     }
 
@@ -141,7 +141,7 @@ class SessionFactsTest {
             sample(elapsedRealtimeMs = 0L, currentRaw = -1_000_000L, voltageRaw = 5_000),
             sample(elapsedRealtimeMs = 1_000L, currentRaw = -3_000_000L, voltageRaw = 5_000),
         )
-        assertNull(sessionFacts(session(), samples).peakW)
+        assertNull(sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), samples).peakW)
     }
 
     @Test
@@ -312,15 +312,58 @@ class SessionFactsTest {
         assertEquals(CurrentScale.MICRO_AMP, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).currentScale)
     }
 
-    @Test fun `an undeclared sign convention resolves through the gauge catalog, a declared one wins`() {
+    @Test fun `off a phone gauge an undeclared sign convention resolves through the catalog, a declared one wins`() {
         val s = sampleWith(currentRaw = 350L, voltageRaw = 4_000)
-        assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = null), listOf(s)).chargingPositive)
         assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
         val declared = sessionWith(gaugeProfileId = "gauge-qbg", deviceKind = DeviceKinds.WATCH).copy(chargingPositive = false)
         assertEquals(false, sessionFacts(declared, listOf(s)).chargingPositive)
         assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-sec", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
         assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-unknown", deviceKind = DeviceKinds.WATCH), listOf(s)).chargingPositive)
-        assertEquals(true, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).chargingPositive)
+        assertEquals(null, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian"), listOf(s)).chargingPositive)
+        assertEquals(false, sessionFacts(sessionWith(gaugeProfileId = "gauge-martian").copy(chargingPositive = false), listOf(s)).chargingPositive)
+    }
+
+    private fun charge(currents: List<Long>, counterStep: Long = 800L, levelEvery: Int = 40) = currents.mapIndexed { i, c ->
+        sample(
+            elapsedRealtimeMs = i * 1_000L, currentRaw = c, voltageRaw = 5_000,
+            chargeCounterRaw = 2_000_000L + i * counterStep, level = 40 + i / levelEvery,
+        )
+    }
+
+    @Test fun `a phone that reports charging as negative reads its true peak, whatever its header guessed`() {
+        val samples = charge(List(100) { if (it % 25 == 0) 500_000L else -3_000_000L })
+        val guessed = sessionWith(gaugeProfileId = "gauge-phone").copy(chargingPositive = true)
+        val facts = sessionFacts(guessed, samples)
+        assertEquals(false, facts.chargingPositive)
+        assertEquals(15.0, facts.peakW!!, 1e-9)
+        assertEquals(false, sessionFacts(sessionWith(gaugeProfileId = null), samples).chargingPositive)
+    }
+
+    @Test fun `an owner-style charging-positive phone session keeps its convention and its peak`() {
+        val samples = charge(List(100) { if (it == 50) -4_000_000L else 3_000_000L })
+        val facts = sessionFacts(sessionWith(gaugeProfileId = "gauge-phone").copy(chargingPositive = true), samples)
+        assertEquals(true, facts.chargingPositive)
+        assertEquals(15.0, facts.peakW!!, 1e-9)
+    }
+
+    @Test fun `a phone session that cannot show its convention has none, and its peak is the magnitude`() {
+        val balanced = charge(List(100) { if (it % 2 == 0) 3_000_000L else -4_000_000L })
+        val flat = charge(List(100) { -3_000_000L }, counterStep = 0L, levelEvery = 1_000)
+        val noCurrent = charge(List(100) { 0L })
+        for (samples in listOf(balanced, flat, noCurrent, emptyList())) {
+            assertNull(SignEvidence.chargingPositive(samples))
+            assertNull(sessionFacts(sessionWith(gaugeProfileId = "gauge-phone"), samples).chargingPositive)
+        }
+        assertEquals(20.0, sessionFacts(sessionWith(gaugeProfileId = "gauge-phone"), balanced).peakW!!, 1e-9)
+    }
+
+    @Test fun `the level stands in for a missing counter, and a counter and level that disagree are no evidence`() {
+        val levelOnly = charge(List(100) { -3_000_000L }).map { it.copy(chargeCounterRaw = null) }
+        assertEquals(false, SignEvidence.chargingPositive(levelOnly))
+        val falling = charge(List(100) { -3_000_000L }, counterStep = -800L)
+        assertNull(SignEvidence.chargingPositive(falling))
+        val draining = charge(List(100) { -3_000_000L }, counterStep = -800L).map { it.copy(level = 90 - it.elapsedRealtimeMs.toInt() / 40_000) }
+        assertEquals(true, SignEvidence.chargingPositive(draining))
     }
 
     private fun sampleWith(currentRaw: Long?, voltageRaw: Int?) = sample(elapsedRealtimeMs = 0L, currentRaw = currentRaw, voltageRaw = voltageRaw)

@@ -52,11 +52,29 @@ since boot — the field to use for computing durations and deltas within one bo
 | `designCapacityMah` *(nullable)* | The cell's design capacity in mAh as the host knew it at capture time, or absent when it did not. The recorder cannot read this itself: the kernel's `charge_full_design` is refused to an unprivileged app by SELinux, so the host supplies it (`RecorderHost.designCapacityMah`). Recorded per session so a reader never substitutes the current device's figure for the one that cell actually had. Added after the first schema-2 builds. |
 | `cycleCount` *(nullable)* | `BatteryManager.EXTRA_CYCLE_COUNT` as the sticky battery intent carried it at plug-in — the platform's count of full charge cycles the cell has seen, or absent when the platform did not supply the key. Read once per session so a longitudinal reader can pair a measured capacity with the cycle it was measured at. Added 2026-09-17 without a schema bump. |
 | `totalMemBytes` *(nullable)* | Kernel-visible total memory in bytes, raw as `ActivityManager.MemoryInfo.totalMem` reports it. With `deviceModel` and `socModel` this identifies the SKU. Added after the first schema-2 builds, so a schema-2 file may lack it. |
-| `capabilities` *(schema ≥ 2, nullable)* | An object declaring what this device's gauge provides — `reportsCurrent`, `reportsChargeCounter`, `counterKind` (`"COULOMB"` or `"SOC_DERIVED"`), `hasHinge`, `hasThermal`, and since 2026-09-08 `reportsChargingStatus` (whether the sticky battery intent carried `android.os.extra.CHARGING_STATUS` at service start) and `chargingPositive` (whether a positive `currentRaw` means charge flowing into the battery — the gauge's sign convention, as the recorder's profile table knew it; absent when unmeasured). Every field is nullable; `null` means "not declared," never "false." Declared once per session so absence is visible at the session level rather than only as per-sample `null`s. |
+| `capabilities` *(schema ≥ 2, nullable)* | An object declaring what this device's gauge provides — `reportsCurrent`, `reportsChargeCounter`, `counterKind` (`"COULOMB"` or `"SOC_DERIVED"`), `hasHinge`, `hasThermal`, and since 2026-09-08 `reportsChargingStatus` (whether the sticky battery intent carried `android.os.extra.CHARGING_STATUS` at service start) and `chargingPositive` (whether a positive `currentRaw` means charge flowing into the battery — the gauge's sign convention, as the recorder's profile table knew it; absent when unmeasured, which since 2026-10-14 includes every phone: phone headers written before then say `true` from a table guess, and a reader derives a phone's convention from the session instead — see "Reading a file whose header says less"). Every field is nullable; `null` means "not declared," never "false." Declared once per session so absence is visible at the session level rather than only as per-sample `null`s. |
 
 The header's `t`/`e` are meaningful to code reading a `RawLine` generically (`t` reads as
 `sessionStartWallClockMs`, `e` as `0`) but are not themselves separate keys in the header's own
 JSON — they're computed, not serialized.
+
+### One id, one projected session
+
+The Room projection keys a session by `sessionStartWallClockMs`, so two devices that start a
+session in the same millisecond produce two files with one id, and only one of them can have a
+row. `Replay` never merges them and never lets the order a directory happens to list in decide:
+
+- **What is showing stays showing.** `Replay.reconcile` keeps the row it already has.
+  `Replay.projectAll` notes which file each row came from before it clears the database, and
+  projects those files first, so a rebuild never swaps one device's session for the other's.
+- **With neither projected** (a fresh install, or a schema bump's destructive migration), the
+  first in `LogDirs.all()` order wins: this device's own recordings, then synced devices, then
+  imported ones, each group by `deviceId`. `reconcile` and `projectAll` both walk that order, so
+  they agree.
+- The other file stays on disk with no row and an `ingest_conflict` event in `events.ndjson`.
+  `Replay.collisionHidden` lists such files (it reads only the headers of files no row names),
+  and `Replay.deleteCollisionHidden` deletes them under the projection's lock without touching
+  any row, so a host can offer to clear them.
 
 ## Sample (`"y":"s"`) — zero or more per session
 
@@ -103,15 +121,19 @@ this when an app leaves the force-stopped state, so a `boot` line can mean eithe
 field (`e`) is the discriminator, since it resets to near zero across a real reboot but runs
 continuously across a force-stop-exit re-delivery — see `EventKinds.BOOT`'s own KDoc in
 `RawLine.kt`), `package_replaced` (an `ACTION_MY_PACKAGE_REPLACED` broadcast was received — the
-app was just updated, and the recorder restarted itself from it), `service_start`,
+app was just updated, and the recorder restarted itself from it), `start_refused` (the
+platform refused that `boot` or `package_replaced` start despite the documented exemption — an OEM
+battery manager, typically; `detail` is `"action=BOOT_COMPLETED"` or `"action=MY_PACKAGE_REPLACED"`,
+and the recorder stays down until the app is opened), `service_start`,
 `service_stop`, `hinge`, `screen_on`, `screen_off`, `thermal`, `charging_status` (the platform's
 charging attribution changed — `detail` is `"status=N"`, the same numbering as the sample field;
 one line per change, so an Adaptive hold or a thermal pause is findable without scanning samples),
-`ingest_conflict` (a session file's id collided with a different device's on ingest —
-skipped, never merged), `capture_policy` (the sampling policy changed without closing the session:
-`detail` is `"settled"` or `"resumed"`), `gauge_scale` (the recorder resolved an unknown gauge's
-current SCALE from this session's own first samples — `detail` is
-`"gaugeProfileId=gauge-unknown-ma"`; see below), and `cadence` (the effective sample interval from
+`ingest_conflict` (a session file's id collided with a different device's on a projection
+pass — skipped, never merged; see "One id, one projected session" below), `capture_policy` (the
+sampling policy changed without closing the session: `detail` is `"settled"` or `"resumed"`),
+`gauge_scale` (the recorder resolved a gauge's current SCALE from this session's own samples —
+`detail` is `"gaugeProfileId=gauge-unknown-ma"` on a watch, `"gaugeProfileId=gauge-phone-ma"` on a
+phone; see below), and `cadence` (the effective sample interval from
 this line forward, so a reader never has to infer it from timestamp deltas alone).
 
 The rolling `events.ndjson` lives outside every session, and clearing the device's logs deletes it
@@ -138,15 +160,48 @@ so this line is rare: at most one file per device ever carries it.
 selects it. Without the entry the id resolved back to `gauge-unknown` (µA) and the session that
 learned the scale was the one session read a thousand times low.
 
+**A phone is probed too, by a stricter rule.** Every phone is `gauge-phone` (µA), and a Samsung-style
+phone gauge speaks mA. The watch rule alone cannot judge a phone: the recorder's own Pixel, full on
+its charger, reports medians of 1,823 to 4,948 µA — under the threshold — and an mA verdict on a µA
+gauge is persisted and reads every later session a thousand times high. So a phone becomes
+`gauge-phone-ma` only when two answers agree (`PhoneScaleEvidence`): the median of its first fifteen
+samples that are genuinely charging (status `CHARGING`, level under 90 %, non-zero current) reads
+mA, **and** the level has since climbed at least two points by more charge than those currents
+could carry if they were µA — less than a tenth of what the climb needs on a 500 mAh cell. A hold
+never climbs, so no hold, at any current, is evidence. The phone line can come late in a file
+(minutes into the charge, not seconds), and is read exactly like the watch's.
+
+**A `gauge-phone` file with no `gauge_scale` line is judged again when it is read.** Raw values are
+stored raw, so the same rule over the whole file repairs a log recorded before the phone probe
+existed — including one imported from another phone. `Replay.parse` applies it. The projection
+only re-reads a file it has not seen, so the rule reached logs already projected through recorder
+Room version 6, which changes no column and exists to drop every row once: the launch-time
+reconcile then parses every file again. Over every real µA phone recording in the corpus no fifteen-sample charging
+window has a median under 611,000 µA. A header with no `gaugeProfileId` (schema 1, written before
+the gauge table existed, on the recorder's own Pixel) is never re-judged.
+
 ### Reading a file whose header says less
 
 - **An unknown or absent `gaugeProfileId` keeps the microamp, PHONE convention** for the scale,
-  the peak watts, the sign and the CSV export — the convention every existing file was written
-  under, so no already-exported session changes meaning, and an id from a newer recorder or a
-  corrupted line falls back rather than to null.
+  the peak watts and the CSV export — the convention every existing file was written under, so no
+  already-exported session changes meaning, and an id from a newer recorder or a corrupted line
+  falls back rather than to null. An unknown id borrows no sign: it has its header's declaration
+  or none.
 - **An undeclared capability resolves through the gauge catalog; a declared one wins.** Schema-1
   headers and pre-2026-09-08 watch files declare no `counterKind` or `chargingPositive`, so both
   come from the profile; an unmeasured gauge with no declaration stays null.
+- **A phone's sign convention comes from the session, never the header** (`SignEvidence`, applied
+  by `sessionFacts` to `gauge-phone`, `gauge-phone-ma` and an absent id). The counter — or, without
+  one, the level — says which way charge moved over the session; the time-integrated current must
+  have moved the same way, so if it did a positive current means charging, and if it ran opposite a
+  negative one does. Until 2026-10-14 every phone header said `true`, copied from a table built on
+  the owner's Pixel; a tester's phone reports charging as negative (7,446 of 7,464 samples while the
+  counter rose), so its peak read 4.29 W against a true 15.22 W. The rule answers null — no signed
+  watts, and a peak that falls back to magnitude — when the counter and level did not move, moved
+  opposite ways, or the current mostly cancelled (less than half the integrated charge net in one
+  direction). In the corpus every charge clears that share at 0.97 or more, and the five sessions
+  it leaves null are all holds at 100 % on the owner's Pixel, which read their peak by magnitude
+  again, as every session did before the sign existed.
 - **The scale is the one calibration fact the recorder keeps open.** Its own settle rule reads
   current in real watts and cannot work without it. Noise floors, smoothing, cadence and names are
   the host's, keyed by the profile id. `SessionFacts.currentScale` carries the resolved scale, so a

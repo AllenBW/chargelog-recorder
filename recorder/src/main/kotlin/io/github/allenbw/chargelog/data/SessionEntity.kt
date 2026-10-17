@@ -36,8 +36,9 @@ data class SessionEntity(
      *  capacity their cell actually had. */
     val designCapacityMah: Int? = null,
     /** Version 5: the gauge's current-sign convention as the header declared it
-     *  (`Capabilities.chargingPositive`). Null on a legacy header; `sessionFacts` resolves that
-     *  through the gauge catalog by [gaugeProfileId], the way it resolves [counterKind]. */
+     *  (`Capabilities.chargingPositive`). Off a phone gauge, `sessionFacts` resolves a null through
+     *  the gauge catalog by [gaugeProfileId], the way it resolves [counterKind]; on a phone gauge it
+     *  reads the session's own samples and does not consult this (`SignEvidence`). */
     val chargingPositive: Boolean? = null,
 )
 

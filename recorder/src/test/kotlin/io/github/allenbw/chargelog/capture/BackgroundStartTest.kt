@@ -5,6 +5,8 @@ package io.github.allenbw.chargelog.capture
 
 import io.github.allenbw.chargelog.capture.BackgroundStart.Decision
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackgroundStartTest {
@@ -27,5 +29,16 @@ class BackgroundStartTest {
         assertEquals(Decision.IGNORE, BackgroundStart.decide(replaced, expectedAction = boot, consented = neverAsked))
         assertEquals(Decision.IGNORE, BackgroundStart.decide(boot, expectedAction = replaced, consented = neverAsked))
         assertEquals(Decision.IGNORE, BackgroundStart.decide(null, expectedAction = boot, consented = neverAsked))
+    }
+
+    @Test fun `a start the platform accepts reports success`() {
+        var started = false
+        assertTrue(BackgroundStart.attempt { started = true })
+        assertTrue(started)
+    }
+
+    @Test fun `a start an OEM refuses is swallowed, not a crash on every boot`() {
+        assertFalse(BackgroundStart.attempt { throw IllegalStateException("ForegroundServiceStartNotAllowedException") })
+        assertFalse(BackgroundStart.attempt { throw SecurityException("OEM background policy") })
     }
 }

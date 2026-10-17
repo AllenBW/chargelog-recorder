@@ -16,7 +16,7 @@ class SamplerProfilesTest {
 
     private val id = "0123456789abcdef0123456789abcdef"
 
-    @Test fun `the phone profile is byte-for-byte what the recorder wrote before`() {
+    @Test fun `the phone profile is what the recorder wrote before, without a guessed sign`() {
         val p = SamplerProfiles.forHost(
             deviceKind = DeviceKinds.PHONE, gauge = GaugeProfiles.PHONE, tickMs = 1000,
             deviceModel = "Pixel 11 Pro Fold", osRelease = "17", appVersion = "0.1.0", deviceId = id,
@@ -30,7 +30,7 @@ class SamplerProfilesTest {
                 appVersion = "0.1.0", deviceKind = DeviceKinds.PHONE, deviceId = id, gaugeProfileId = "gauge-phone",
                 capabilities = Capabilities(
                     reportsCurrent = true, reportsChargeCounter = true, counterKind = CounterKinds.COULOMB,
-                    hasHinge = true, hasThermal = true, reportsChargingStatus = true, chargingPositive = true,
+                    hasHinge = true, hasThermal = true, reportsChargingStatus = true,
                 ),
                 currentScale = CurrentScale.MICRO_AMP,
                 socModel = "Tensor G5", totalMemBytes = 12_450_000_000L, designCapacityMah = 4_890,
@@ -70,6 +70,18 @@ class SamplerProfilesTest {
         assertEquals(true, qbg.capabilities?.chargingPositive)
         val sec = SamplerProfiles.forHost(DeviceKinds.WATCH, GaugeProfiles.SEC, 1000, "SM-R960", "15", "0.1.0", id, true, true, false, true)
         assertEquals(null, sec.capabilities?.chargingPositive)
+        val phone = SamplerProfiles.forHost(DeviceKinds.PHONE, GaugeProfiles.PHONE, 1000, "SM-S931B", "16", "0.1.0", id, true, true, false, true)
+        assertEquals(null, phone.capabilities?.chargingPositive)
+    }
+
+    @Test fun `a phone refined to milliamps records the mA entry and its scale`() {
+        val phone = SamplerProfiles.forHost(DeviceKinds.PHONE, GaugeProfiles.PHONE, 1000, "SM-S931B", "16", "0.1.0", id, true, true, false, true)
+        val refined = SamplerProfiles.withGauge(phone, GaugeProfiles.PHONE_MA)
+        assertEquals("gauge-phone-ma", refined.gaugeProfileId)
+        assertEquals(CurrentScale.MILLI_AMP, refined.currentScale)
+        assertEquals(CounterKinds.COULOMB, refined.capabilities?.counterKind)
+        assertEquals(null, refined.capabilities?.chargingPositive)
+        assertEquals(phone.id, refined.id)
     }
 
     @Test fun `reportsChargingStatus is declared as the host probed it, and stays null when it did not`() {

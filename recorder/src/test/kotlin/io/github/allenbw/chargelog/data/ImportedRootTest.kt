@@ -217,4 +217,69 @@ class ImportedRootTest {
         assertTrue(syn.exists())
         assertEquals(row, dao.sessions[5000L])
     }
+
+
+    @Test
+    fun `copiesOf names the synced copy first, then the import, and only the phone file for own rows`() {
+        val d = dirs()
+        assertEquals(listOf(File(synced, "p2/session-5000.ndjson"), File(imported, "p2/session-5000.ndjson")), d.copiesOf(session("p2")))
+        assertEquals(listOf(File(synced, "p2/session-5000.ndjson")), dirs(withImports = false).copiesOf(session("p2")))
+        assertEquals(listOf(File(File(tmp.root, "rawlog"), "session-5000.ndjson")), d.copiesOf(session(null)))
+        assertEquals(listOf(File(File(tmp.root, "rawlog"), "session-5000.ndjson")), d.copiesOf(session("local")))
+    }
+
+    @Test
+    fun `a row whose device id is not a directory name maps to no file and its delete drops only the row`() {
+        val bad = session("../evil")
+        val d = dirs()
+        assertEquals(emptyList<File>(), d.copiesOf(bad))
+        assertNull(d.importedCopy(bad))
+        val dao = FakeCaptureDao()
+        dao.sessions[bad.id] = bad
+        assertTrue(runBlocking { Replay.deleteSessionCompletely(d, dao, bad) })
+        assertFalse(dao.sessions.containsKey(bad.id))
+        assertFalse(runBlocking { Replay.deleteSyncedCopy(d, dao, bad) })
+        assertFalse(runBlocking { Replay.deleteImportedCopy(d, dao, bad) })
+    }
+
+    @Test
+    fun `a header naming an invalid device id is never projected, and the refusal is logged`() {
+        val d = dirs()
+        File(File(synced, "w1").apply { mkdirs() }, "session-5000.ndjson").writeText(body(5000L, "../evil"))
+        val dao = FakeCaptureDao()
+        assertEquals(0, runBlocking { Replay.reconcile(d, dao) })
+        assertTrue(dao.sessions.isEmpty())
+        val events = File(File(tmp.root, "rawlog"), "events.ndjson").readText()
+        assertTrue(events, EventKinds.INGEST_INVALID_ID in events)
+        assertEquals(0, runBlocking { Replay.projectAll(d, dao) })
+    }
+
+    @Test
+    fun `deleteSyncedCopy on this device's own row does nothing and says so`() {
+        val d = dirs()
+        val own = File(File(tmp.root, "rawlog").apply { mkdirs() }, "session-5000.ndjson").apply { writeText(body(5000L, "local")) }
+        val dao = FakeCaptureDao()
+        runBlocking { Replay.reconcile(d, dao) }
+        val row = dao.sessions.getValue(5000L)
+        assertFalse(runBlocking { Replay.deleteSyncedCopy(d, dao, row) })
+        assertFalse(runBlocking { Replay.deleteSyncedCopy(d, dao, row.copy(deviceId = null)) })
+        assertTrue(own.exists())
+        assertEquals(row, dao.sessions[5000L])
+    }
+
+    @Test
+    fun `a held file whose last line is torn still counts as held, and only its header is read`() {
+        val torn = body(5000L, "w1").trimEnd('\n').dropLast(7)
+        File(File(synced, "w1").apply { mkdirs() }, "session-5000.ndjson").writeText(torn)
+        val r = runBlocking { Replay.ingestExternal(body(5000L, "w1").byteInputStream(), dirs(), FakeCaptureDao()) }
+        assertEquals(IngestResult.Rejected(IngestReasons.DUPLICATE), r)
+        assertFalse(File(imported, "w1/session-5000.ndjson").exists())
+    }
+
+    @Test
+    fun `a file whose header comes after a garbled first line still counts as held`() {
+        File(File(imported, "w1").apply { mkdirs() }, "session-5000.ndjson").writeText("garbage\n" + body(5000L, "w1"))
+        val r = runBlocking { Replay.ingestExternal(body(5000L, "w1").byteInputStream(), dirs(), FakeCaptureDao()) }
+        assertEquals(IngestResult.Rejected(IngestReasons.DUPLICATE), r)
+    }
 }

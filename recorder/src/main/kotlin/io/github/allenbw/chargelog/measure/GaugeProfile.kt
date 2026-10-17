@@ -28,12 +28,15 @@ enum class CurrentScale(val toMicroAmps: Double) { MICRO_AMP(1.0), MILLI_AMP(1_0
  * @property counterKind `"COULOMB"` or `"SOC_DERIVED"` — the header's `Capabilities.counterKind`
  *   vocabulary, carried as a plain string and pinned to it by a test — or null when unknown
  *   (treated as absent for health arithmetic).
- * @property chargingPositive whether a positive raw current means charge flowing INTO the battery.
- *   `true` on both gauges measured so far (phone: 5,354 charging samples positive vs 141 negative;
- *   Pixel Watch 5: 1,914 of 1,927 — projection DB pulled 2026-09-08); null where nothing has been
- *   measured, which [Units.signedWatts] turns into no signed number rather than a guessed sign.
- *   Defaulted, so a host constructing or copying a profile keeps compiling (CONTRIBUTING.md's
- *   seam rule).
+ * @property chargingPositive whether a positive raw current means charge flowing INTO the battery,
+ *   declared only where the gauge itself was measured: `true` on the Pixel Watch 5 (1,914 of 1,927
+ *   charging samples positive, projection DB pulled 2026-09-08); null everywhere else, which
+ *   [Units.signedWatts] turns into no signed number rather than a guessed sign. No phone profile
+ *   declares one. `gauge-phone` once said `true` from the owner's own Pixel and a tester's phone
+ *   proved it a property of the device, not of "a phone": 7,446 of its 7,464 samples negative
+ *   while the counter rose. A phone's convention is read from each session's own evidence instead
+ *   ([SignEvidence], applied by [sessionFacts]). Defaulted, so a host constructing or copying a
+ *   profile keeps compiling (CONTRIBUTING.md's seam rule).
  */
 data class GaugeProfile(
     val id: String,
@@ -49,8 +52,9 @@ object GaugeProfiles {
     const val MA_DETECT_RAW_MAX = 5_000L
 
     /** The phone's own gauge — a µA coulomb counter, which is what this recorder was written on.
-     *  Charging-positive per S0 §b and the 2026-09-08 count. */
-    val PHONE = GaugeProfile(id = "gauge-phone", currentScale = CurrentScale.MICRO_AMP, counterKind = "COULOMB", chargingPositive = true)
+     *  No sign convention: phones disagree, so each session's is derived from its own samples
+     *  ([SignEvidence]). A phone whose samples prove mA is refined to [PHONE_MA]. */
+    val PHONE = GaugeProfile(id = "gauge-phone", currentScale = CurrentScale.MICRO_AMP, counterKind = "COULOMB")
 
     /** Google Pixel Watch (Qualcomm SW5100 BMS): µA, and its counter follows the reported level
      *  rather than a real coulomb count. Charging-positive, measured on the Pixel Watch 5 (1,914 of
@@ -68,11 +72,17 @@ object GaugeProfiles {
      *  returned by [forDevice]: nothing about a manufacturer implies the scale, only the samples do. */
     val UNKNOWN_MA = UNKNOWN.copy(id = "gauge-unknown-ma", currentScale = CurrentScale.MILLI_AMP)
 
-    val all: List<GaugeProfile> = listOf(PHONE, QBG, SEC, UNKNOWN, UNKNOWN_MA)
+    /** [PHONE] with the mA scale [PhoneScaleEvidence] proved — a Samsung-style phone gauge. A table
+     *  entry of its own for the reason [UNKNOWN_MA] is one: the header's id must carry the measured
+     *  scale back through [byId]. Never returned by [forDevice]. */
+    val PHONE_MA = PHONE.copy(id = "gauge-phone-ma", currentScale = CurrentScale.MILLI_AMP)
+
+    val all: List<GaugeProfile> = listOf(PHONE, QBG, SEC, UNKNOWN, UNKNOWN_MA, PHONE_MA)
 
     fun byId(id: String?): GaugeProfile? = id?.let { wanted -> all.firstOrNull { it.id == wanted } }
 
-    /** Bundled-table selection. Phones always get [PHONE]; watches by manufacturer. */
+    /** Bundled-table selection. Phones always get [PHONE] (the scale probe may refine it to
+     *  [PHONE_MA]); watches by manufacturer. */
     fun forDevice(manufacturer: String, model: String, isWatch: Boolean): GaugeProfile {
         if (!isWatch) return PHONE
         return when (manufacturer.trim().lowercase()) {
@@ -90,11 +100,18 @@ object GaugeProfiles {
      * back through the table as µA, i.e. 1000× low — the exact failure the scale field exists to
      * prevent, moved from record time to read time. Measured profiles are never second-guessed: a
      * probe outranks a heuristic.
+     *
+     * [PHONE] is not judged here: a full phone's µA trickle reads under the threshold too (the
+     * corpus's own Pixel holds at 100 % have medians of 1,823 to 4,948 µA), so a phone needs the
+     * corroborated rule in [PhoneScaleEvidence].
      */
     fun plausibility(currentRawWhileCharging: List<Long>, selected: GaugeProfile): GaugeProfile {
         if (selected !== UNKNOWN || currentRawWhileCharging.isEmpty()) return selected
-        val magnitudes = currentRawWhileCharging.map { kotlin.math.abs(it) }.sorted()
-        val median = magnitudes[magnitudes.size / 2]
-        return if (median in 1 until MA_DETECT_RAW_MAX) UNKNOWN_MA else selected
+        return if (medianReadsMilliAmps(currentRawWhileCharging)) UNKNOWN_MA else selected
+    }
+
+    internal fun medianReadsMilliAmps(currentRaw: List<Long>): Boolean {
+        val magnitudes = currentRaw.map { kotlin.math.abs(it) }.sorted()
+        return magnitudes[magnitudes.size / 2] in 1 until MA_DETECT_RAW_MAX
     }
 }

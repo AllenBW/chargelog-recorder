@@ -38,6 +38,12 @@ class BootReceiver : BroadcastReceiver() {
             EventLog(RecordingService.logDir(context)).append(
                 RawLine.Event(System.currentTimeMillis(), SystemClock.elapsedRealtime(), EventKinds.BOOT))
         } catch (_: IOException) { }
-        RecordingService.start(context)
+        if (BackgroundStart.attempt { RecordingService.start(context) }) return
+        Log.w(BackgroundStart.TAG, "BOOT_COMPLETED: the platform refused the recorder's start")
+        try {
+            EventLog(RecordingService.logDir(context)).append(RawLine.Event(
+                System.currentTimeMillis(), SystemClock.elapsedRealtime(),
+                EventKinds.START_REFUSED, detail = "action=BOOT_COMPLETED"))
+        } catch (_: IOException) { }
     }
 }

@@ -60,10 +60,11 @@ class LogDirs @JvmOverloads constructor(
     }
 
     /** Where [session]'s imported copy is, or would be, under [importedRoot]: null for this
-     *  device's own rows and when there is no [importedRoot]. Says nothing about whether it exists. */
+     *  device's own rows, for a row whose id fails [VALID_DEVICE_ID] (no path can reach it) and
+     *  when there is no [importedRoot]. Says nothing about whether it exists. */
     fun importedCopy(session: SessionEntity): File? {
         val id = session.deviceId
-        if (id == null || id == localDeviceId) return null
+        if (id == null || id == localDeviceId || !VALID_DEVICE_ID.matches(id)) return null
         return importedRoot?.let { File(importedDir(id), session.sourceFile) }
     }
 
@@ -82,7 +83,9 @@ class LogDirs @JvmOverloads constructor(
     }
 
     /** Phone dir first (it may not exist yet), then each existing synced device dir, then each
-     *  existing imported device dir, each group name-sorted. */
+     *  existing imported device dir, each group name-sorted. That order is also the precedence
+     *  between two devices' sessions that share an id when neither is projected yet: the first
+     *  listed is the one [Replay] projects. */
     fun all(): List<File> =
         listOf(phone) + deviceDirs(syncedRoot) + (importedRoot?.let(::deviceDirs) ?: emptyList())
 
@@ -91,9 +94,23 @@ class LogDirs @JvmOverloads constructor(
         return RawLogWriter.sessionFiles(dir).filterNot { imported != null && File(imported, it.name).exists() }
     }
 
+    internal fun projected(dir: File, states: List<FileState>): Set<String> {
+        val dirDeviceId = if (dir == phone) null else dir.name
+        return states
+            .filter { it.deviceId == dirDeviceId || (dirDeviceId == null && it.deviceId == localDeviceId) }
+            .mapTo(HashSet()) { it.sourceFile }
+    }
+
+    internal fun shadowedBy(file: File): File? {
+        val dir = file.parentFile ?: return null
+        if (importedRoot == null || dir.parentFile != importedRoot) return null
+        return File(File(syncedRoot, dir.name), file.name)
+    }
+
     internal fun copiesOf(session: SessionEntity): List<File> {
         val id = session.deviceId
         if (id == null || id == localDeviceId) return listOf(File(phone, session.sourceFile))
+        if (!VALID_DEVICE_ID.matches(id)) return emptyList()
         return listOfNotNull(File(syncedDir(id), session.sourceFile), importedCopy(session))
     }
 

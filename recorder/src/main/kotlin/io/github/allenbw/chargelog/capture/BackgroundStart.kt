@@ -25,6 +25,23 @@ internal object BackgroundStart {
         else -> Decision.START
     }
 
+    /**
+     * Runs [start] and reports whether the platform accepted it. Both broadcasts are documented
+     * FGS background-start exemptions, but an OEM battery manager can refuse anyway — as
+     * `ForegroundServiceStartNotAllowedException` (an [IllegalStateException]) or a
+     * [SecurityException] — and an uncaught refusal in a receiver kills the process on every boot
+     * or update. A refusal leaves the recorder down until the app is opened, which is what a
+     * refusal means; it must not also crash.
+     */
+    fun attempt(start: () -> Unit): Boolean = try {
+        start()
+        true
+    } catch (_: IllegalStateException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
     /** The one tag both receivers log under. */
     const val TAG = "ChargeLogRecorder"
 }

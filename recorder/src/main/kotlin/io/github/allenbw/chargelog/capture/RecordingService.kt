@@ -337,7 +337,7 @@ class RecordingService : Service() {
     private var gaugeProbe: GaugeScaleProbe? = null
 
     private fun onProbeSample(sample: RawLine.Sample) {
-        val refined = gaugeProbe?.offer(sample.currentRaw) ?: return
+        val refined = gaugeProbe?.offer(sample) ?: return
         CapturePrefs.setLearnedGaugeId(this, refined.id)
         machine.refineGauge(refined)
         try {
@@ -379,9 +379,9 @@ class RecordingService : Service() {
             is CaptureEffect.LogEvent -> eventLog.append(fx.event)
             is CaptureEffect.SetSampling -> {
                 samplingMode = fx.mode
-                mainHandler.post {
-                    if (fx.mode == SamplingMode.EVENT) stopTicking() else if (plugged) startTicking()
-                }
+                val event = fx.mode == SamplingMode.EVENT
+                LiveFeed.onSampling(event)
+                mainHandler.post { if (event) stopTicking() else if (plugged) startTicking() }
             }
             CaptureEffect.AcquireWakeLock -> {
                 val pm = getSystemService(PowerManager::class.java)

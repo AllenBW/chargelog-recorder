@@ -3,6 +3,8 @@
 
 package io.github.allenbw.chargelog.measure
 
+import io.github.allenbw.chargelog.capture.log.RawLine
+
 /**
  * The first-samples half of [GaugeProfiles.plausibility]: collects a session's opening charging
  * currents and answers, once, with the refined profile — or never, which is also an answer.
@@ -27,6 +29,11 @@ package io.github.allenbw.chargelog.measure
  * One probe per session, so a session that could not answer never stops the next one from trying.
  * A session that DID answer has already been persisted by then, so the next one starts from the
  * refined profile and never probes at all.
+ *
+ * A [GaugeProfiles.PHONE] is probed too, but not by its current alone: a full phone's µA trickle
+ * reads like mA, and the answer is persisted, so a phone is refined to [GaugeProfiles.PHONE_MA]
+ * only when [PhoneScaleEvidence] — the median AND the level's climb — agrees. That needs the whole
+ * sample, so a phone answers only through the [offer] overload that takes one.
  */
 class GaugeScaleProbe(
     private val selected: GaugeProfile,
@@ -40,11 +47,12 @@ class GaugeScaleProbe(
     }
 
     private val magnitudes = ArrayList<Long>(samples)
+    private val phone = PhoneScaleEvidence()
     private var answered = false
 
     /** Whether this probe can still say anything. False for a measured gauge (a probe never
      *  second-guesses one) and after it has answered. */
-    val open: Boolean get() = !answered && selected === GaugeProfiles.UNKNOWN
+    val open: Boolean get() = !answered && (selected === GaugeProfiles.UNKNOWN || selected === GaugeProfiles.PHONE)
 
     /**
      * Offers one sample's raw current. Returns the refined profile the once the window fills and
@@ -56,10 +64,26 @@ class GaugeScaleProbe(
      * profile means a gauge it characterized, and a characterized gauge outranks a heuristic.
      */
     fun offer(currentRaw: Long?): GaugeProfile? {
+        if (selected !== GaugeProfiles.UNKNOWN) return null
         if (!open || currentRaw == null || currentRaw == 0L) return null
         magnitudes += currentRaw
         if (magnitudes.size < samples) return null
         answered = true
         return GaugeProfiles.plausibility(magnitudes, selected).takeIf { it !== selected }
+    }
+
+    /**
+     * Offers one whole sample — what the recording service calls. A watch's answer is exactly
+     * [offer] of the sample's current; a phone's is [PhoneScaleEvidence]'s, which also reads the
+     * level, the status and the time. Returns [GaugeProfiles.PHONE_MA] once a phone's evidence
+     * proves mA, and null every other time, including a µA verdict.
+     */
+    fun offer(sample: RawLine.Sample): GaugeProfile? {
+        if (selected !== GaugeProfiles.PHONE) return offer(sample.currentRaw)
+        if (!open) return null
+        val level = Units.levelPct(sample.level, sample.scale)
+        val milliAmps = phone.offer(sample.e, sample.currentRaw, level, sample.status) ?: return null
+        answered = true
+        return GaugeProfiles.PHONE_MA.takeIf { milliAmps }
     }
 }

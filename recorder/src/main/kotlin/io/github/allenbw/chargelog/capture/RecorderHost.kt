@@ -61,7 +61,8 @@ interface RecorderHost {
 
     /**
      * The recorder resolved something about the gauge that [gaugeProfile]'s table could not: today
-     * only the current SCALE of a [GaugeProfiles.UNKNOWN] watch, which nothing about a
+     * only the current SCALE — of a [GaugeProfiles.UNKNOWN] watch, or of a [GaugeProfiles.PHONE]
+     * whose gauge proved to speak mA ([GaugeProfiles.PHONE_MA]) — which nothing about a
      * manufacturer implies and only the samples can say.
      *
      * Called once, on the recorder's own thread, the first time a session's opening samples

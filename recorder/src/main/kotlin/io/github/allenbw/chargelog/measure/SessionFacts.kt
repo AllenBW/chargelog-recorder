@@ -44,8 +44,12 @@ data class SessionFacts(
     /**
      * Whether a positive raw current on this session's gauge means charge flowing INTO the
      * battery — what [Units.signedWatts] needs to say "plugged in but draining" without guessing.
-     * Resolved like [counterKind]: the header's declaration when it made one, else the gauge
-     * catalog's measured convention for this session's profile, else null (an unmeasured gauge).
+     *
+     * On a phone gauge (`gauge-phone`, `gauge-phone-ma`, or a header with no profile id) it is
+     * the session's own evidence, [SignEvidence], and the header is not consulted: every phone
+     * header written before this rule declared the catalog's `true`, which was a guess, and one
+     * tester's phone is the opposite. Elsewhere it resolves like [counterKind] — the header's
+     * declaration when it made one, else the gauge catalog's measured convention, else null.
      * Defaulted for the seam's stability rule.
      */
     val chargingPositive: Boolean? = null,
@@ -79,10 +83,17 @@ private fun peakChargingW(
         .filter { it > 0.0 }.maxOrNull()
 }
 
+private fun SessionEntity.onPhoneGauge(): Boolean =
+    gaugeProfileId == null || gaugeProfileId == GaugeProfiles.PHONE.id || gaugeProfileId == GaugeProfiles.PHONE_MA.id
+
 fun sessionFacts(session: SessionEntity, samples: List<SampleEntity>): SessionFacts {
-    val scale = GaugeProfiles.byId(session.gaugeProfileId)?.currentScale ?: CurrentScale.MICRO_AMP
-    val signConvention = session.chargingPositive
-        ?: (GaugeProfiles.byId(session.gaugeProfileId) ?: GaugeProfiles.PHONE).chargingPositive
+    val profile = GaugeProfiles.byId(session.gaugeProfileId)
+    val scale = profile?.currentScale ?: CurrentScale.MICRO_AMP
+    val signConvention = if (session.onPhoneGauge()) {
+        SignEvidence.chargingPositive(samples)
+    } else {
+        session.chargingPositive ?: profile?.chargingPositive
+    }
     val peak = peakChargingW(samples, scale, signConvention)
     val maxT = samples.mapNotNull { Units.tempC(it.tempDeciC) }.maxOrNull()
     val ah = if (session.startChargeCounterRaw != null && session.endChargeCounterRaw != null)
@@ -95,8 +106,7 @@ fun sessionFacts(session: SessionEntity, samples: List<SampleEntity>): SessionFa
         durationMs = session.endedAtMs?.let { it - session.startedAtMs },
         startLevel = session.startLevel, endLevel = session.endLevel,
         energyAh = ah, peakW = peak, maxTempC = maxT, source = source,
-        counterKind = session.counterKind
-            ?: (GaugeProfiles.byId(session.gaugeProfileId) ?: GaugeProfiles.PHONE).counterKind,
+        counterKind = session.counterKind ?: (profile ?: GaugeProfiles.PHONE).counterKind,
         chargingPositive = signConvention,
         currentScale = scale,
     )

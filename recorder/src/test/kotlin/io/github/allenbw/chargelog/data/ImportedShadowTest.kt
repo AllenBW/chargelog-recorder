@@ -180,4 +180,33 @@ class ImportedShadowTest {
         schemaVersion = 2, startLevel = 10, endLevel = 30, startChargeCounterRaw = null, endChargeCounterRaw = null,
         sourceFile = name, deviceKind = DeviceKinds.WATCH, deviceId = "w1",
     )
+
+
+    @Test fun `a truncated import is never promoted to its clean synced twin, however many reconciles pass`() {
+        put(imported, "w1", listOf(10, 20), ended = false)
+        put(synced, "w1", listOf(10, 20, 30), ended = true)
+        val dao = reconciled()
+        repeat(3) { runBlocking { Replay.reconcile(dirs(), dao) } }
+        assertEquals(setOf(10, 20), levels(dao).toSet())
+        assertEquals(EndReasonsForReplay.TRUNCATED, dao.sessions.getValue(5000L).endReason)
+        assertEquals(File(imported, "w1"), dirs().dirFor(dao.sessions.getValue(5000L)))
+    }
+
+    @Test fun `a full rebuild projects the import over its synced twin, the same as a reconcile`() {
+        put(imported, "w1", listOf(10, 20))
+        put(synced, "w1", listOf(10, 20, 30))
+        val dao = FakeCaptureDao()
+        assertEquals(1, runBlocking { Replay.projectAll(dirs(), dao) })
+        assertEquals(listOf(10, 20), levels(dao))
+    }
+
+    @Test fun `an import removed behind the app's back leaves the row until the session is re-parsed`() {
+        val imp = put(imported, "w1", listOf(10, 20))
+        put(synced, "w1", listOf(10, 20, 30))
+        val dao = reconciled()
+        imp.delete()
+        runBlocking { Replay.reconcile(dirs(), dao) }
+        assertEquals("the residual the domain doc records", listOf(10, 20), levels(dao))
+        assertEquals(File(synced, "w1"), dirs().dirFor(dao.sessions.getValue(5000L)))
+    }
 }

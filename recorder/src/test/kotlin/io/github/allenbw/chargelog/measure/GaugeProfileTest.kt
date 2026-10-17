@@ -14,7 +14,7 @@ class GaugeProfileTest {
 
     @Test fun `ids are the table's and unique`() {
         assertEquals(
-            listOf("gauge-phone", "gauge-qbg", "gauge-sec", "gauge-unknown", "gauge-unknown-ma"),
+            listOf("gauge-phone", "gauge-qbg", "gauge-sec", "gauge-unknown", "gauge-unknown-ma", "gauge-phone-ma"),
             GaugeProfiles.all.map { it.id },
         )
         assertEquals(GaugeProfiles.all.size, GaugeProfiles.all.map { it.id }.toSet().size)
@@ -22,6 +22,7 @@ class GaugeProfileTest {
 
     @Test fun `counterKind strings match the header vocabulary`() {
         assertEquals(CounterKinds.COULOMB, GaugeProfiles.PHONE.counterKind)
+        assertEquals(CounterKinds.COULOMB, GaugeProfiles.PHONE_MA.counterKind)
         assertEquals(CounterKinds.SOC_DERIVED, GaugeProfiles.QBG.counterKind)
         assertEquals(CounterKinds.SOC_DERIVED, GaugeProfiles.SEC.counterKind)
         assertNull(GaugeProfiles.UNKNOWN.counterKind)
@@ -33,6 +34,7 @@ class GaugeProfileTest {
         assertEquals(CurrentScale.MILLI_AMP, GaugeProfiles.SEC.currentScale)
         assertEquals(CurrentScale.MICRO_AMP, GaugeProfiles.UNKNOWN.currentScale)
         assertEquals(CurrentScale.MILLI_AMP, GaugeProfiles.UNKNOWN_MA.currentScale)
+        assertEquals(CurrentScale.MILLI_AMP, GaugeProfiles.PHONE_MA.currentScale)
     }
 
     @Test fun `forDevice selects by manufacturer on a watch and phone otherwise`() {
@@ -45,10 +47,14 @@ class GaugeProfileTest {
         })
         assertSame(GaugeProfiles.PHONE, GaugeProfiles.forDevice("Google", "Pixel 11 Pro Fold", isWatch = false))
         assertSame(GaugeProfiles.PHONE, GaugeProfiles.forDevice("samsung", "SM-S931B", isWatch = false))
+        assertTrue("forDevice never selects the detected-mA phone entry", listOf("samsung", "Google", "OnePlus").none {
+            GaugeProfiles.forDevice(it, "a phone", isWatch = false) === GaugeProfiles.PHONE_MA
+        })
     }
 
     @Test fun `byId round-trips and tolerates null and unknown ids`() {
         for (p in GaugeProfiles.all) assertSame(p, GaugeProfiles.byId(p.id))
+        assertSame(GaugeProfiles.PHONE_MA, GaugeProfiles.byId("gauge-phone-ma"))
         assertNull(GaugeProfiles.byId(null))
         assertNull(GaugeProfiles.byId("gauge-from-the-future"))
     }
@@ -65,6 +71,7 @@ class GaugeProfileTest {
 
     @Test fun `plausibility never changes a measured profile`() {
         assertSame(GaugeProfiles.QBG, GaugeProfiles.plausibility(listOf(350L, 360L), GaugeProfiles.QBG))
+        assertSame(GaugeProfiles.PHONE, GaugeProfiles.plausibility(listOf(350L, 360L), GaugeProfiles.PHONE))
         assertSame(GaugeProfiles.SEC, GaugeProfiles.plausibility(listOf(350_000L), GaugeProfiles.SEC))
     }
 
@@ -72,8 +79,9 @@ class GaugeProfileTest {
         assertSame(GaugeProfiles.UNKNOWN, GaugeProfiles.plausibility(emptyList(), GaugeProfiles.UNKNOWN))
     }
 
-    @Test fun `the two measured gauges are charging-positive and the unverified ones say nothing`() {
-        assertEquals(true, GaugeProfiles.PHONE.chargingPositive)
+    @Test fun `only the measured watch gauge declares a sign, and no phone profile guesses one`() {
+        assertNull(GaugeProfiles.PHONE.chargingPositive)
+        assertNull(GaugeProfiles.PHONE_MA.chargingPositive)
         assertEquals(true, GaugeProfiles.QBG.chargingPositive)
         assertNull(GaugeProfiles.SEC.chargingPositive)
         assertNull(GaugeProfiles.UNKNOWN.chargingPositive)

@@ -43,6 +43,12 @@ class PackageReplacedReceiver : BroadcastReceiver() {
             EventLog(RecordingService.logDir(context)).append(
                 RawLine.Event(System.currentTimeMillis(), SystemClock.elapsedRealtime(), EventKinds.PACKAGE_REPLACED))
         } catch (_: IOException) { }
-        RecordingService.start(context)
+        if (BackgroundStart.attempt { RecordingService.start(context) }) return
+        Log.w(BackgroundStart.TAG, "MY_PACKAGE_REPLACED: the platform refused the recorder's start")
+        try {
+            EventLog(RecordingService.logDir(context)).append(RawLine.Event(
+                System.currentTimeMillis(), SystemClock.elapsedRealtime(),
+                EventKinds.START_REFUSED, detail = "action=MY_PACKAGE_REPLACED"))
+        } catch (_: IOException) { }
     }
 }

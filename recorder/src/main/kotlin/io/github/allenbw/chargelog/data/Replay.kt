@@ -8,7 +8,9 @@ import io.github.allenbw.chargelog.capture.log.EventKinds
 import io.github.allenbw.chargelog.capture.log.EventLog
 import io.github.allenbw.chargelog.capture.log.NdjsonCodec
 import io.github.allenbw.chargelog.capture.log.RawLine
+import io.github.allenbw.chargelog.capture.log.RawLogWriter
 import io.github.allenbw.chargelog.measure.GaugeProfiles
+import io.github.allenbw.chargelog.measure.PhoneScaleEvidence
 import io.github.allenbw.chargelog.measure.Units
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -35,8 +37,16 @@ object Replay {
 
     internal val mutex = Mutex()
 
+    private const val MAX_LOGGED_ID = 64
+
     data class Parsed(val session: SessionEntity, val samples: List<SampleEntity>)
 
+    /**
+     * One session file as its rows, or null without a header. The row's `gaugeProfileId` is what
+     * was measured, not what was assumed: a `gauge_scale` event's id when the file carries one, else
+     * `gauge-phone-ma` for a `gauge-phone` file whose own charge proves an mA gauge
+     * ([PhoneScaleEvidence]) — a log recorded before the phone probe existed — else the header's.
+     */
     fun parse(file: File): Parsed? {
         var header: RawLine.Header? = null
         var endEvent: RawLine.Event? = null
@@ -63,6 +73,7 @@ object Replay {
 
         val first = samples.firstOrNull()
         val last = samples.lastOrNull()
+        val rows = samples.map { it.toEntity(h.sessionStartWallClockMs) }
         val session = SessionEntity(
             id = h.sessionStartWallClockMs,
             startedAtMs = h.sessionStartWallClockMs,
@@ -82,10 +93,7 @@ object Replay {
             deviceKind = h.deviceKind ?: DeviceKinds.PHONE,
             deviceId = h.deviceId,
             deviceModel = h.deviceModel,
-            gaugeProfileId = gaugeEvent?.detail
-                ?.substringAfter(EventKinds.GAUGE_SCALE_DETAIL_KEY, "")
-                ?.takeIf { GaugeProfiles.byId(it) != null }
-                ?: h.gaugeProfileId,
+            gaugeProfileId = measuredGaugeId(gaugeEvent, h.gaugeProfileId, rows),
             reportsCurrent = h.capabilities?.reportsCurrent,
             counterKind = h.capabilities?.counterKind,
             hasHinge = h.capabilities?.hasHinge,
@@ -96,16 +104,35 @@ object Replay {
             designCapacityMah = h.designCapacityMah,
             chargingPositive = h.capabilities?.chargingPositive,
         )
-        return Parsed(session, samples.map { it.toEntity(h.sessionStartWallClockMs) })
+        return Parsed(session, rows)
+    }
+
+    private fun measuredGaugeId(gaugeEvent: RawLine.Event?, headerId: String?, rows: List<SampleEntity>): String? {
+        val probed = gaugeEvent?.detail
+            ?.substringAfter(EventKinds.GAUGE_SCALE_DETAIL_KEY, "")
+            ?.takeIf { GaugeProfiles.byId(it) != null }
+        if (probed != null) return probed
+        val repaired = headerId == GaugeProfiles.PHONE.id && PhoneScaleEvidence.speaksMilliAmps(rows)
+        return if (repaired) GaugeProfiles.PHONE_MA.id else headerId
     }
 
     private suspend fun admit(p: Parsed, dao: CaptureDao, dirs: LogDirs): Boolean {
+        if (invalidId(p, dirs)) return false
         val existing = dao.session(p.session.id) ?: return true
         if (existing.deviceId == p.session.deviceId) return true
         EventLog(dirs.phone).append(RawLine.Event(
             t = System.currentTimeMillis(), e = 0, kind = EventKinds.INGEST_CONFLICT,
             detail = "id=${p.session.id},deviceId=${p.session.deviceId},existingDeviceId=${existing.deviceId}"))
         return false
+    }
+
+    private fun invalidId(p: Parsed, dirs: LogDirs): Boolean {
+        val deviceId = p.session.deviceId ?: return false
+        if (LogDirs.VALID_DEVICE_ID.matches(deviceId)) return false
+        EventLog(dirs.phone).append(RawLine.Event(
+            t = System.currentTimeMillis(), e = 0, kind = EventKinds.INGEST_INVALID_ID,
+            detail = "id=${p.session.id},deviceId=${deviceId.take(MAX_LOGGED_ID)}"))
+        return true
     }
 
     /**
@@ -116,12 +143,18 @@ object Replay {
      * [deleteSessionCompletely] via [mutex] — without it, a delete racing this rebuild could
      * resurrect rows for a file the delete just removed, since this doesn't otherwise know the
      * delete happened.
+     *
+     * When two devices' sessions share an id (their start in ms), the one that was projected
+     * before the rebuild is projected again, so a rebuild never swaps which of them is shown.
+     * With neither projected, [LogDirs.all]'s order decides, as it does in [reconcile]. The other
+     * stays on disk unprojected; [collisionHidden] finds it.
      */
     suspend fun projectAll(dirs: LogDirs, dao: CaptureDao): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
+            val incumbents = dao.fileStates()
             dao.clearAll()
             var count = 0
-            for (dir in dirs.all()) for (f in dirs.projectable(dir)) {
+            for (f in incumbentsFirst(dirs, incumbents)) {
                 val p = try { parse(f) } catch (_: IOException) { null } ?: continue
                 if (!admit(p, dao, dirs)) continue
                 dao.upsertSession(p.session)
@@ -131,6 +164,15 @@ object Replay {
             count
         }
     }
+
+    private fun incumbentsFirst(dirs: LogDirs, incumbents: List<FileState>): List<File> =
+        dirs.all()
+            .flatMap { dir ->
+                val held = dirs.projected(dir, incumbents)
+                dirs.projectable(dir).map { it to (it.name in held) }
+            }
+            .sortedBy { (_, held) -> !held }
+            .map { (f, _) -> f }
 
     /**
      * Incremental projection over every [LogDirs] directory: parse only session files
@@ -157,6 +199,27 @@ object Replay {
                 }
             }
             count
+        }
+    }
+
+    /**
+     * The id of every session that has a log on disk in any [LogDirs] root — this device's own,
+     * `synced/<id>/` and `imported/<id>/` — read from the file names (`session-<id>.ndjson`) and
+     * whether or not any row projects it. A file is what a session IS: [deleteSessionCompletely]
+     * removes the files before the rows, and a projection can lag them (a schema bump drops every
+     * row; a file that cannot be read is skipped). So "no row" never means "gone", and a host that
+     * keeps its own state per session decides what is gone from this. Serialized with the other
+     * writers through the same lock, so it never sees an import or a delete half done.
+     */
+    suspend fun sessionIdsOnDisk(dirs: LogDirs): Set<Long> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            dirs.all().flatMapTo(HashSet()) { dir ->
+                RawLogWriter.sessionFiles(dir).mapNotNull { f ->
+                    f.name.removePrefix(RawLogWriter.SESSION_PREFIX)
+                        .removeSuffix(RawLogWriter.SESSION_SUFFIX)
+                        .toLongOrNull()
+                }
+            }
         }
     }
 

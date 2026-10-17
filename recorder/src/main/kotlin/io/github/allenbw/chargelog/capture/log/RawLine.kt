@@ -37,7 +37,9 @@ data class Capabilities(
     /** The gauge's current-sign convention as the recorder's profile table knew it: `true` when a
      *  positive `currentRaw` means charge flowing INTO the battery, `false` when it means out,
      *  null when unmeasured. Declared per session for the same reason [counterKind] is: a reader
-     *  must not have to guess a sign from a catalog it may not have. */
+     *  must not have to guess a sign from a catalog it may not have. Never declared by a phone
+     *  since 2026-10-14; an older phone header's `true` was the table's guess, and a reader takes a
+     *  phone's convention from the session's own samples instead (`SignEvidence`). */
     val chargingPositive: Boolean? = null,
 )
 
@@ -138,6 +140,11 @@ object EventKinds {
      *  the recorder restarted itself from it. */
     const val PACKAGE_REPLACED = "package_replaced"
 
+    /** A `boot` or `package_replaced` start was refused by the platform despite the documented
+     *  exemption — an OEM battery manager, typically. The recorder stays down until the app is
+     *  opened. detail: `action=BOOT_COMPLETED` or `action=MY_PACKAGE_REPLACED`. */
+    const val START_REFUSED = "start_refused"
+
     const val SERVICE_START = "service_start"
     const val SERVICE_STOP = "service_stop"
     const val HINGE = "hinge"
@@ -153,6 +160,11 @@ object EventKinds {
     /** A session file arrived whose id (start ms) already belongs to a DIFFERENT device; it was
      *  skipped, never merged. detail: id=…,deviceId=…,existingDeviceId=… */
     const val INGEST_CONFLICT = "ingest_conflict"
+
+    /** A session file's header named a `deviceId` that is not a valid directory name
+     *  ([io.github.allenbw.chargelog.data.LogDirs.VALID_DEVICE_ID]); it was skipped, never
+     *  projected, so no row can name a file no path can reach. detail: id=…,deviceId=… */
+    const val INGEST_INVALID_ID = "ingest_invalid_id"
 
     /**
      * The recorder resolved an UNKNOWN gauge's current SCALE from this session's own first

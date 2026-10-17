@@ -27,7 +27,7 @@ added nullable field does *not* bump it. It bumps only for a change an older rea
 safely. A fixture recorded years from now must still be readable, so this number is the one that
 actually constrains us.
 
-**The Room database version** (currently **5**) is a private implementation detail. The database
+**The Room database version** (currently **6**) is a private implementation detail. The database
 is a projection rebuilt from the NDJSON logs, which are the source of truth; a host that wipes it
 loses nothing.
 
@@ -36,6 +36,67 @@ writes into each session header's `appVersion`. A fixture therefore records whic
 app produced it, which is why the field is there.
 
 ## [Unreleased]
+
+## [0.7.0] — 2026-10-14
+
+The app's 0.7.0 also carries the phone-side fix for the "Receive from watch" crash (#368): a
+vendor Bluetooth stack that refuses the listen call with `SecurityException` now ends the window
+instead of the process, and the phone declares the legacy `BLUETOOTH` permission. Host-side; the
+recorder changes are below. **Room version 6** drops the projection once at the next reconcile.
+
+### Added
+
+- `GaugeProfiles.PHONE_MA` (`gauge-phone-ma`): a phone gauge that reports current in mA. The scale
+  probe now runs on phones too, by a stricter two-answer rule (`PhoneScaleEvidence`: the median of
+  the first fifteen genuinely charging samples, and a level rise those currents could not carry if
+  they were µA); the answer travels in the existing `gauge_scale` event. `GaugeScaleProbe` gains
+  `offer(RawLine.Sample)`.
+- `SignEvidence`: a session's current-sign convention read from its own samples — the
+  time-integrated current must move the same way as the charge counter (or level).
+- `Replay.sessionIdsOnDisk(dirs)`: every session id with a log in any `LogDirs` root, from file
+  names, under the projection lock — what "gone" means for a host keeping per-session state.
+- `Replay.collisionHidden(dirs, dao)` and `Replay.deleteCollisionHidden(dirs, dao, keepId)` — the
+  session files no row shows because another device's session holds their id (start in ms), and a
+  locked delete of exactly those files. Additive: no host change.
+
+### Fixed
+
+- A phone is no longer assumed charging-positive. `GaugeProfiles.PHONE.chargingPositive` is now
+  null, so new phone headers no longer declare a guess, and `sessionFacts` reads a phone session's
+  sign from `SignEvidence`, ignoring the header (every phone header ever written said `true`). A
+  phone that reports charging as negative showed ~4 W peaks against true 15–16 W.
+- `Replay.parse` re-judges a `gauge-phone` log with no `gauge_scale` event by the same phone rule,
+  so a milliamp phone's old logs stop reading a thousand times low. **Room version 6** changes no
+  column; it exists to drop the projection once so every log is re-parsed at the next reconcile.
+- `Replay.projectAll` re-projects the session that was showing when two devices' sessions share an
+  id, so a rebuild never swaps which one is visible; with neither projected, `LogDirs.all()` order
+  decides, as in `reconcile`.
+- `BootReceiver` and `PackageReplacedReceiver` no longer crash the process when an OEM battery
+  manager refuses the recorder's start despite the documented exemption. The refusal is logged and
+  written to `events.ndjson` as the new `start_refused` event (`detail` `action=BOOT_COMPLETED` or
+  `action=MY_PACKAGE_REPLACED`); the recorder stays down until the app is opened. Additive: no host
+  change, no schema bump.
+
+## [0.6.2] — 2026-10-13
+
+No recorder change. Stamped because every ChargeLog release is a recorder release of the same
+number (see Versioning). The app's 0.6.2 supersedes 0.6.1, which was cut and never uploaded: it
+carries that fix, the residual kill path behind it — a listen window whose foreground promotion
+was refused settled the platform's foreground promise before stopping, instead of being killed for
+not keeping it — and a diagnostics bundle that can carry the crash, the permission grants and a
+session log over 1 MiB. All of it is host-side: `RecorderHost`, the NDJSON schema (2) and the Room
+projection (5) are untouched, and no fixture moves.
+
+## [0.6.1] — 2026-10-10
+
+No recorder change. Stamped because every ChargeLog release is a recorder release of the same
+number (see Versioning). The app's 0.6.1 is one fix and its fallout: the phone's Bluetooth listen
+window promoted itself to the foreground before it could bail, which is what the platform kills a
+service for, and the diagnostics bundle can now carry the crash that prompted it. All of it is
+host-side — `RecorderHost`, the NDJSON schema (2) and the Room projection (5) are untouched, and
+no fixture moves.
+
+## [0.6.0] — 2026-10-07
 
 ### Added
 
@@ -63,6 +124,14 @@ app produced it, which is why the field is there.
   The directory records how a log arrived: an import written into `synced/<deviceId>/` lands on the
   exact path a sync receiver appends to and resumes from. Files already on disk are never moved. A
   host that does not set the root sees no change. No NDJSON, Room or `RecorderHost` change.
+- **`LiveFeed.Snapshot.eventSampled`** (default false) says the sampler has settled to battery
+  broadcasts, where a long silence means "unchanged"; `LiveFeed.onSampling` sets it from the
+  service's `SetSampling` effect and `onOpen` clears it. A host judging freshness from the newest
+  sample's age reads it to keep a settled hold FRESH. Additive: the old positional constructor
+  still compiles.
+- **`EventKinds.INGEST_INVALID_ID`**: a session file whose header names a `deviceId` that is not
+  a valid directory name is skipped at projection and logged, so no row ever names a file no path
+  can reach (before, such a row made `deleteSessionCompletely` throw).
 
 ### Changed
 
@@ -84,6 +153,10 @@ app produced it, which is why the field is there.
   A service that restarts mid-charge now swaps notification ids on its first recording post, as
   every other idle-to-recording change does, instead of updating its idle notification in place.
   No host-visible API change.
+- `Replay.deleteSyncedCopy` returns false and does nothing for this device's own session or an
+  invalid id, as `deleteImportedCopy` already did; `LogDirs.importedCopy` is null for an invalid
+  id. The import's "already held" check reads a file only until its header instead of parsing
+  every sample, so a multi-hour log no longer holds the projection lock for a full parse twice.
 
 ## [0.5.0] — 2026-10-02
 

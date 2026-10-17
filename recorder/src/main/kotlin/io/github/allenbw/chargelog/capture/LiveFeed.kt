@@ -26,6 +26,7 @@ object LiveFeed {
         val recentWatts: List<Double>,
         val recentLevels: List<Pair<Long, Int>>,
         val history: List<AnalyzerSample>,
+        val eventSampled: Boolean = false,
     )
 
     private val watts = ArrayDeque<Double>()
@@ -33,11 +34,13 @@ object LiveFeed {
 
     private val history = ArrayList<AnalyzerSample>()
     private var sessionStartMs: Long? = null
+    private var eventSampled = false
     private val _state = MutableStateFlow<Snapshot?>(null)
     val state: StateFlow<Snapshot?> = _state.asStateFlow()
 
     fun onOpen(sessionStartMs: Long) {
         this.sessionStartMs = sessionStartMs
+        eventSampled = false
         watts.clear(); levels.clear(); history.clear()
         _state.value = Snapshot(sample = null, recording = true, sessionStartMs = sessionStartMs,
             recentWatts = emptyList(), recentLevels = emptyList(), history = emptyList())
@@ -48,7 +51,19 @@ object LiveFeed {
         s.level?.let { levels.addLast(s.e to it); if (levels.size > RING) levels.removeFirst() }
         history.add(s.toAnalyzerSample())
         _state.value = Snapshot(s, recording = sessionStartMs != null, sessionStartMs = sessionStartMs,
-            recentWatts = watts.toList(), recentLevels = levels.toList(), history = history.toList())
+            recentWatts = watts.toList(), recentLevels = levels.toList(), history = history.toList(),
+            eventSampled = eventSampled)
+    }
+
+    /**
+     * The sampler's mode, as [SamplingMode]: true once a settled charge samples on battery
+     * broadcasts alone, where a long silence means the battery has not changed, not that the
+     * recorder has gone quiet. A reader judging freshness from the newest sample's age must not
+     * read a settled hold as stale. False again at every [onOpen].
+     */
+    fun onSampling(eventSampled: Boolean) {
+        this.eventSampled = eventSampled
+        _state.value = _state.value?.copy(eventSampled = eventSampled)
     }
 
     fun onClose() {
@@ -56,5 +71,7 @@ object LiveFeed {
         _state.value = _state.value?.copy(recording = false, sessionStartMs = null)
     }
 
-    fun reset() { sessionStartMs = null; watts.clear(); levels.clear(); history.clear(); _state.value = null }
+    fun reset() {
+        sessionStartMs = null; eventSampled = false; watts.clear(); levels.clear(); history.clear(); _state.value = null
+    }
 }
