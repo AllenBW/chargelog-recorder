@@ -92,6 +92,24 @@ class ReplayReconcileTest {
     }
 
     @Test
+    fun `a session reconciled mid-charge is projected again, in full, once it ends`() {
+        val f = writeSession(header(1000L), sample(t = 2000L, e = 20L, level = 50))
+        val dao = FakeCaptureDao()
+        assertEquals(1, runBlocking { Replay.reconcile(dirs(), dao) })
+        assertEquals(EndReasonsForReplay.TRUNCATED, dao.sessions.getValue(1000L).endReason)
+
+        f.appendText(NdjsonCodec.encode(sample(t = 3000L, e = 30L, level = 61)) + "\n")
+        f.appendText(NdjsonCodec.encode(event(t = 4000L, e = 40L, kind = EventKinds.SESSION_END)) + "\n")
+
+        assertEquals(1, runBlocking { Replay.reconcile(dirs(), dao) })
+        val ended = dao.sessions.getValue(1000L)
+        assertEquals(EndReasonsForReplay.CLEAN, ended.endReason)
+        assertEquals(61, ended.endLevel)
+        assertEquals(4000L, ended.endedAtMs)
+        assertEquals(0, runBlocking { Replay.reconcile(dirs(), dao) })
+    }
+
+    @Test
     fun `clean row is skipped`() {
         val f = writeSession(
             header(1000L),

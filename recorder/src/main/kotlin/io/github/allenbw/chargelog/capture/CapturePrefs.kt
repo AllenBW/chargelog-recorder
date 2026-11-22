@@ -78,6 +78,16 @@ object CapturePrefs {
 
     fun recordEnabledFlow(context: Context): Flow<Boolean> = prefsFlow(context) { recordEnabled(context) }
 
+    // TRAP docs/recording-service-threading.md — every change calls back, not each new value; the stop holds it
+    internal fun watchRecordEnabled(context: Context, onChange: () -> Unit): () -> Unit {
+        val prefs = prefs(context)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_RECORD_ENABLED || key == null) onChange()
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 

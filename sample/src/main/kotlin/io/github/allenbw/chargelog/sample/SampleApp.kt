@@ -8,6 +8,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import io.github.allenbw.chargelog.capture.CapturePrefs
 import io.github.allenbw.chargelog.capture.ChannelLabels
 import io.github.allenbw.chargelog.capture.HostContent
 import io.github.allenbw.chargelog.capture.NotificationChannels
@@ -15,6 +16,9 @@ import io.github.allenbw.chargelog.capture.RecorderHost
 import io.github.allenbw.chargelog.capture.RecorderState
 import io.github.allenbw.chargelog.data.ChargeLogDb
 import io.github.allenbw.chargelog.data.LogDirs
+import io.github.allenbw.chargelog.measure.CurrentScale
+import io.github.allenbw.chargelog.measure.GaugeProfile
+import io.github.allenbw.chargelog.measure.GaugeProfiles
 import io.github.allenbw.chargelog.measure.Units
 import java.util.Locale
 
@@ -36,6 +40,22 @@ class SampleApp : Application(), RecorderHost {
 
     override val appVersion: String get() = BuildConfig.VERSION_NAME
 
+    /**
+     * The scale this phone's gauge reports current in. A raw current means nothing without it: many
+     * phones report mA, not the µA the bundled [GaugeProfiles.PHONE] assumes, and read as µA their
+     * watts come out a thousand times low. The recorder learns the scale from the samples and
+     * persists it ([CapturePrefs.learnedGaugeId]), so it is read once at start and replaced when
+     * [onGaugeRefined] reports a new answer mid-charge. `@Volatile` because [content] reads it from
+     * three threads.
+     */
+    @Volatile
+    var currentScale: CurrentScale = CurrentScale.MICRO_AMP
+        private set
+
+    override fun onGaugeRefined(profile: GaugeProfile) {
+        currentScale = profile.currentScale
+    }
+
     override fun channelLabels() = ChannelLabels(
         recording = getString(R.string.channel_recording),
         idle = getString(R.string.channel_idle),
@@ -54,7 +74,7 @@ class SampleApp : Application(), RecorderHost {
         val text = when (state) {
             is RecorderState.Idle -> getString(R.string.notif_idle)
             is RecorderState.Recording -> {
-                val w = Units.watts(state.sample?.currentRaw, state.sample?.voltageRaw)
+                val w = Units.watts(state.sample?.currentRaw, state.sample?.voltageRaw, currentScale)
                 if (w == null) getString(R.string.notif_recording_unknown)
                 else getString(R.string.notif_recording, format1(w))
             }
@@ -89,6 +109,7 @@ class SampleApp : Application(), RecorderHost {
 
     override fun onCreate() {
         super.onCreate()
+        currentScale = (GaugeProfiles.byId(CapturePrefs.learnedGaugeId(this)) ?: gaugeProfile()).currentScale
         // Here rather than in the service: the channels — and any Settings deep link to them —
         // must exist from the first launch, before the recorder has ever run.
         NotificationChannels.ensure(this)

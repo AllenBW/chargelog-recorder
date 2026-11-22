@@ -161,6 +161,14 @@ object EventKinds {
      *  skipped, never merged. detail: id=…,deviceId=…,existingDeviceId=… */
     const val INGEST_CONFLICT = "ingest_conflict"
 
+    /** A session file held more than [io.github.allenbw.chargelog.data.Replay.MAX_SAMPLES] samples;
+     *  a projection pass refused it and left it on disk. A row projected while the file was still
+     *  under the cap is kept as it was; a file first met past the cap has none. Written once per
+     *  process while the file only grows: later passes skip it unread, and read it again only once
+     *  it gets shorter. Each app start that meets it again writes another. detail:
+     *  file=<directory>/<file name>,max=<the cap> */
+    const val INGEST_TOO_MANY_SAMPLES = "ingest_too_many_samples"
+
     /** A session file's header named a `deviceId` that is not a valid directory name
      *  ([io.github.allenbw.chargelog.data.LogDirs.VALID_DEVICE_ID]); it was skipped, never
      *  projected, so no row can name a file no path can reach. detail: id=…,deviceId=… */

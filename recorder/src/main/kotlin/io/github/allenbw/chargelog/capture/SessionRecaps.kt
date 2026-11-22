@@ -6,9 +6,10 @@ package io.github.allenbw.chargelog.capture
 import io.github.allenbw.chargelog.data.Replay
 import io.github.allenbw.chargelog.measure.sessionFacts
 import java.io.File
+import java.io.IOException
 
 internal fun recapOf(file: File): SessionRecap? {
-    val parsed = Replay.parse(file) ?: return null
+    val parsed = try { Replay.parse(file) } catch (_: IOException) { null } ?: return null
     val endedAt = parsed.session.endedAtMs ?: parsed.samples.lastOrNull()?.wallClockMs ?: return null
     val facts = sessionFacts(parsed.session, parsed.samples)
     return SessionRecap(

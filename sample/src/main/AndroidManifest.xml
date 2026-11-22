@@ -11,7 +11,11 @@ SPDX-License-Identifier: GPL-3.0-only
         android:name=".SampleApp"
         android:label="@string/app_name"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <!-- Both backup attributes, as any host needs: allowBackup alone no longer stops
+             device-to-device transfer from targetSdk 31 on, and a transferred device id would make
+             two installs claim the same authorship (DeviceIdentity's KDoc). -->
         <activity
             android:name=".SampleActivity"
             android:exported="true">

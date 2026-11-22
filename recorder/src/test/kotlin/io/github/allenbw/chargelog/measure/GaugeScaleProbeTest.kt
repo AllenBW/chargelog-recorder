@@ -76,6 +76,21 @@ class GaugeScaleProbeTest {
         assertFalse(probe.open)
     }
 
+    private fun threePointRise(steps: Int, probe: GaugeScaleProbe): List<GaugeProfile> = (0..steps).mapNotNull {
+        val level = if (it < steps) 300 else 330
+        probe.offer(RawLine.Sample(t = it * 2_000L, e = it * 2_000L, currentRaw = 1_200L, level = level, scale = 1_000,
+            status = BatteryStatus.CHARGING))
+    }
+
+    @Test fun `a recording phone is refined only when its rise is below a MARGINth of what the rise needs`() {
+        val under = GaugeScaleProbe(GaugeProfiles.PHONE)
+        assertEquals("9.99 mAh x MARGIN against 10 needed", listOf(GaugeProfiles.PHONE_MA), threePointRise(1_499, under))
+        assertFalse(under.open)
+        val exactly = GaugeScaleProbe(GaugeProfiles.PHONE)
+        assertEquals("exactly 10 mAh x MARGIN against 10 needed", emptyList<GaugeProfile>(), threePointRise(1_500, exactly))
+        assertTrue(exactly.open)
+    }
+
     @Test fun `a microamp phone is left alone and the probe closes`() {
         val probe = GaugeScaleProbe(GaugeProfiles.PHONE)
         assertTrue((0 until 60).none { probe.offer(phoneSample(it, 2_000_000L, 40)) != null })

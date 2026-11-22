@@ -19,6 +19,7 @@ internal class ForegroundPoster<N>(
 
     private var lastChannelId: String? = null
     private var currentId: Int = NotificationIds.PRIMARY
+    private var closed = false
 
     @Synchronized
     fun start(content: HostContent) {
@@ -28,7 +29,14 @@ internal class ForegroundPoster<N>(
     }
 
     @Synchronized
-    fun post(content: HostContent, force: Boolean = false) {
+    fun close() {
+        closed = true
+    }
+
+    // TRAP docs/recording-service-threading.md — superseded is read inside the lock, never before it
+    @Synchronized
+    fun post(content: HostContent, force: Boolean = false, superseded: () -> Boolean = { false }) {
+        if (closed || superseded()) return
         val key = content.dedupeKey
         if (!force && (key == lastKey || clock() - lastAtE < GATE_MS)) return
         lastKey = key

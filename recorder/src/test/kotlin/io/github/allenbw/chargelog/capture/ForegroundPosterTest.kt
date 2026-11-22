@@ -7,8 +7,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ForegroundPosterTest {
 
@@ -102,7 +104,7 @@ class ForegroundPosterTest {
         val release = CountDownLatch(1)
         val slow = ForegroundPoster(
             build = { c: HostContent ->
-                if (c.dedupeKey == "tick") { building.countDown(); release.await(5, TimeUnit.SECONDS) }
+                if (c.dedupeKey == "tick") { building.countDown(); release.await(WAIT_MS, TimeUnit.MILLISECONDS) }
                 c.dedupeKey
             },
             notify = { id, n -> shade[id] = n },
@@ -113,16 +115,97 @@ class ForegroundPosterTest {
         slow.start(rec("boot"))
         now += 60_000L
         val tick = Thread { slow.post(rec("tick"), force = true) }.apply { start() }
-        assertTrue(building.await(5, TimeUnit.SECONDS))
+        assertTrue(building.await(WAIT_MS, TimeUnit.MILLISECONDS))
         val unplug = Thread { slow.post(idle("idle"), force = true) }.apply { start() }
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MS)
         while (unplug.state != Thread.State.BLOCKED && unplug.state != Thread.State.TERMINATED) {
             assertTrue("the unplug post neither ran nor waited", System.nanoTime() < deadline)
             Thread.yield()
         }
         release.countDown()
-        tick.join(5_000L)
-        unplug.join(5_000L)
+        tick.join(WAIT_MS)
+        unplug.join(WAIT_MS)
         assertEquals(mapOf(NotificationIds.ALTERNATE to "idle"), shade.toMap())
+    }
+
+    @Test fun `a post superseded when it takes the lock is dropped, even forced, and one still wanted lands`() {
+        poster.post(rec("a"), force = true, superseded = { true })
+        assertEquals(emptyList<String>(), calls)
+        poster.post(rec("a"), force = true, superseded = { false })
+        assertEquals(listOf("notify 1 a@1"), calls)
+    }
+
+    @Test fun `a recap waiting on a session's first post reads superseded only once that post has landed`() {
+        val shade = ConcurrentHashMap<Int, String>()
+        val sessionOpen = AtomicBoolean(false)
+        val building = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slow = ForegroundPoster(
+            build = { c: HostContent ->
+                if (c.dedupeKey == "tick") { building.countDown(); release.await(WAIT_MS, TimeUnit.MILLISECONDS) }
+                c.dedupeKey
+            },
+            notify = { id, n -> shade[id] = n },
+            promote = { id, n -> shade[id] = n },
+            cancel = { id -> shade.remove(id) },
+            clock = { now },
+        )
+        slow.start(idle("boot"))
+        val tick = Thread { slow.post(rec("tick"), force = true) }.apply { start() }
+        assertTrue(building.await(WAIT_MS, TimeUnit.MILLISECONDS))
+        val recap = Thread { slow.post(idle("recap"), force = true, superseded = sessionOpen::get) }.apply { start() }
+        awaitBlockedOrDone(recap)
+        sessionOpen.set(true)
+        release.countDown()
+        tick.join(WAIT_MS)
+        recap.join(WAIT_MS)
+        assertEquals(mapOf(NotificationIds.ALTERNATE to "tick"), shade.toMap())
+    }
+
+    @Test fun `a closed poster posts nothing more, forced or not`() {
+        poster.post(rec("a"))
+        poster.close()
+        now += 60_000L
+        poster.post(idle("late recap"), force = true)
+        poster.post(rec("b"))
+        assertEquals(listOf("notify 1 a@1"), calls)
+    }
+
+    @Test fun `close waits for a post in flight, so nothing lands after it returns`() {
+        val events = CopyOnWriteArrayList<String>()
+        val building = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slow = ForegroundPoster(
+            build = { c: HostContent ->
+                building.countDown()
+                release.await(WAIT_MS, TimeUnit.MILLISECONDS)
+                c.dedupeKey
+            },
+            notify = { _, n -> events += "posted $n" },
+            promote = { _, n -> events += "posted $n" },
+            cancel = { },
+            clock = { now },
+        )
+        val tick = Thread { slow.post(rec("tick"), force = true) }.apply { start() }
+        assertTrue(building.await(WAIT_MS, TimeUnit.MILLISECONDS))
+        val teardown = Thread { slow.close(); events += "closed" }.apply { start() }
+        awaitBlockedOrDone(teardown)
+        release.countDown()
+        tick.join(WAIT_MS)
+        teardown.join(WAIT_MS)
+        slow.post(idle("late recap"), force = true)
+        assertEquals(listOf("posted tick", "closed"), events.toList())
+    }
+
+    private fun awaitBlockedOrDone(thread: Thread) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MS)
+        while (thread.state != Thread.State.BLOCKED && thread.state != Thread.State.TERMINATED) {
+            assertTrue("${thread.name} neither ran nor waited", System.nanoTime() < deadline)
+            Thread.yield()
+        }
+    }
+
+    private companion object {
+        const val WAIT_MS = 15_000L
     }
 }

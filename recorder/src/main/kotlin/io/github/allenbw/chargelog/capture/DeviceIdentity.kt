@@ -16,16 +16,16 @@ import java.util.Random
  * tracker, but it is not invisible either: a host whose UI promises otherwise is wrong, and a
  * host that offers a diagnostics attachment has to say an anonymous per-install id is in it.
  *
- * The app opts out of Auto Backup and device-to-device transfer altogether (`allowBackup="false"`
- * in the manifest — a full-data backup binds an agent into the app process and the backup manager
- * kills that process when it unbinds, foreground service or not), so
- * [FILE] is never backed up or transferred to another device — which is also what identity
- * needs: a restore is a new
- * installation, so the new phone must mint its own id. Inheriting the old one would make two live installs claim the same
+ * The app opts out of Auto Backup (`allowBackup="false"` in the manifest — a full-data backup
+ * binds an agent into the app process and the backup manager kills that process when it unbinds,
+ * foreground service or not). From targetSdk 31 on, Android ignores that attribute for
+ * device-to-device transfer, so the manifest also names `dataExtractionRules` that exclude every
+ * domain from transfer. Together they keep [FILE] from being backed up or transferred to another
+ * device — which is also what identity needs: a restore is a new installation, so the new phone
+ * must mint its own id. Inheriting the old one would make two live installs claim the same
  * authorship (breaking `reconcile`'s conflict rule) and would make the old phone's own sessions
- * look local on the new one, so importing them would be refused as `LOCAL_DEVICE`. That coupling
- * is only expressible in the manifest's XML, so it cannot be pinned by a JVM test; this KDoc and
- * the comment in that file are the guard.
+ * look local on the new one, so importing them would be refused as `LOCAL_DEVICE`. A host
+ * embedding the recorder needs both attributes for the same reason.
  */
 object DeviceIdentity {
     const val LENGTH = 32

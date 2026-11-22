@@ -5,14 +5,37 @@ package io.github.allenbw.chargelog.capture.log
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.FileOutputStream
+import java.io.FilterOutputStream
+import java.io.IOException
+import java.io.OutputStream
 
 class RawLogWriterTest {
 
     @get:Rule val tmp = TemporaryFolder()
+
+    private class Faulty(out: OutputStream, var failing: Boolean = false) : FilterOutputStream(out) {
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            out.write(b, off, len)
+        }
+
+        override fun flush() {
+            if (failing) throw IOException("No space left on device")
+            super.flush()
+        }
+
+        override fun close() {
+            if (failing) throw IOException("I/O error")
+            super.close()
+        }
+    }
 
     private val header = RawLine.Header(
         schema = 1, samplerProfileId = "p1", deviceModel = "test", osRelease = "16",
@@ -52,6 +75,18 @@ class RawLogWriterTest {
     @Test(expected = IllegalStateException::class)
     fun `append without open throws`() {
         RawLogWriter(tmp.root).append(RawLine.Sample(t = 1, e = 2))
+    }
+
+    @Test
+    fun `open while a log is open throws, and the open log is kept`() {
+        val w = RawLogWriter(tmp.root)
+        val f = w.open(header)
+        assertThrows(IllegalStateException::class.java) { w.open(header.copy(sessionStartWallClockMs = 45)) }
+        assertEquals(f, w.currentFile)
+        assertFalse(File(tmp.root, "session-45.ndjson").exists())
+        w.append(RawLine.Sample(t = 1, e = 2, level = 50))
+        w.close()
+        assertEquals(2, f.readLines().size)
     }
 
     @Test
@@ -123,6 +158,36 @@ class RawLogWriterTest {
         assertFalse("close must always clear the writer", w.isOpen)
         val f2 = w.open(header.copy(sessionStartWallClockMs = 99))
         assertEquals("session-99.ndjson", f2.name)
+        w.close()
+    }
+
+    @Test
+    fun `close leaves the writer closed and reusable when the flush and close themselves fail`() {
+        val streams = mutableListOf<Faulty>()
+        val w = RawLogWriter(tmp.root) { f -> Faulty(FileOutputStream(f, true)).also { streams += it } }
+        w.open(header)
+        w.append(RawLine.Sample(t = 1, e = 2, level = 50))
+        streams.single().failing = true
+        w.close()
+        assertFalse("a failed flush stranded an open writer", w.isOpen)
+        assertNull(w.currentFile)
+        val f2 = w.open(header.copy(sessionStartWallClockMs = 43))
+        assertEquals("session-43.ndjson", f2.name)
+        assertEquals(header.copy(sessionStartWallClockMs = 43), NdjsonCodec.decode(f2.readLines().single()))
+        w.close()
+    }
+
+    @Test
+    fun `a header that cannot be written leaves the writer closed, so the next open is not refused`() {
+        var failing = true
+        val w = RawLogWriter(tmp.root) { f -> Faulty(FileOutputStream(f, true), failing) }
+        assertThrows(IOException::class.java) { w.open(header) }
+        assertFalse("a failed open stranded an open writer", w.isOpen)
+        assertNull(w.currentFile)
+        assertThrows(IllegalStateException::class.java) { w.append(RawLine.Sample(t = 1, e = 2)) }
+        failing = false
+        val f2 = w.open(header.copy(sessionStartWallClockMs = 44))
+        assertEquals(header.copy(sessionStartWallClockMs = 44), NdjsonCodec.decode(f2.readLines().single()))
         w.close()
     }
 }

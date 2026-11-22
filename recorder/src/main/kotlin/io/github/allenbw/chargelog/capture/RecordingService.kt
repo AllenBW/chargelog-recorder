@@ -25,8 +25,9 @@ import io.github.allenbw.chargelog.capture.log.EventLog
 import io.github.allenbw.chargelog.capture.log.RawLine
 import io.github.allenbw.chargelog.capture.log.RawLogWriter
 import io.github.allenbw.chargelog.data.LogLayout
+import io.github.allenbw.chargelog.measure.GaugeProfile
 import io.github.allenbw.chargelog.measure.GaugeProfiles
-import io.github.allenbw.chargelog.measure.GaugeScaleProbe
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,7 +35,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -62,23 +62,26 @@ class RecordingService : Service() {
         fun logDir(context: Context): File = LogLayout.ownDir(context)
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // TRAP docs/recording-service-threading.md — an Exception ends one coroutine, an Error the process
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+        if (e !is Exception) throw e
+        Log.w(TAG, "capture coroutine failed", e)
+    })
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var tickMs: Long = CapturePrefs.DEFAULT_SAMPLE_INTERVAL_S * 1000L
 
-    // TRAP docs/recording-service-threading.md — the pump is the only writer of machine/writer/wakeLock
+    // TRAP docs/recording-service-threading.md — the pump alone runs effects: machine, log writer, wakeLock
     private val inputs = Channel<CaptureInput>(Channel.UNLIMITED)
     private var inputPump: Job? = null
     private var tickJob: Job? = null
     private var quietJob: Job? = null
 
-    // TRAP docs/recording-service-threading.md — main-thread only; closes the orphan-ticker window
-    private var plugged = false
-    private lateinit var machine: SessionStateMachine
+    // TRAP docs/recording-service-threading.md — written on main only; the guarded posts read it in the poster's lock
+    @Volatile private var plugged = false
     private lateinit var snapshots: BatterySnapshots
-    private lateinit var writer: RawLogWriter
+    private lateinit var effects: EffectRunner
     private lateinit var eventLog: EventLog
     private lateinit var hinge: HingeMonitor
     private var wakeLock: PowerManager.WakeLock? = null
@@ -89,7 +92,9 @@ class RecordingService : Service() {
 
     @Volatile private var samplingMode = SamplingMode.TICK
 
-    @Volatile private var lastRecap: SessionRecap? = null
+    private val recaps = NewestRecap()
+
+    private var switchWatch: (() -> Unit)? = null
 
     private lateinit var host: RecorderHost
 
@@ -109,6 +114,43 @@ class RecordingService : Service() {
             startTicking()
         },
     )
+
+    private val ports = object : EffectPorts {
+        override fun appendEvent(event: RawLine.Event) = eventLog.append(event)
+
+        override fun acquireWakeLock() {
+            releaseWakeLock()
+            wakeLock = getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "chargelog:recording")
+                .apply { setReferenceCounted(false); acquire(MAX_WAKELOCK_MS) }
+        }
+
+        override fun releaseWakeLock() {
+            val held = wakeLock
+            wakeLock = null
+            held?.release()
+        }
+
+        override fun onSampling(mode: SamplingMode) {
+            samplingMode = mode
+            val event = mode == SamplingMode.EVENT
+            mainHandler.post { if (event) stopTicking() else if (plugged) startTicking() }
+        }
+
+        override fun onClosed(file: File) {
+            val rank = recaps.closing()
+            scope.launch(Dispatchers.IO) { postIdle(recaps.offer(rank, recapOf(file))) }
+        }
+
+        override fun fallbackGauge(): GaugeProfile = host.gaugeProfile()
+
+        override fun onGaugeLearned(profile: GaugeProfile) {
+            CapturePrefs.setLearnedGaugeId(this@RecordingService, profile.id)
+            host.onGaugeRefined(profile)
+        }
+
+        override fun beat() = quiet.beat()
+    }
 
     private val thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
         thermalStatus = status
@@ -137,7 +179,7 @@ class RecordingService : Service() {
                     quietJob?.cancel()
                     samplingMode = SamplingMode.TICK
                     submit(CaptureInput.PowerDisconnected(t, e))
-                    poster.post(host.content(idleState()), force = true)
+                    postIdle(recaps.current)
                 }
                 Intent.ACTION_BATTERY_CHANGED -> {
                     snapshots.onBatteryChanged(intent)
@@ -178,7 +220,7 @@ class RecordingService : Service() {
         val reportsChargingStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             ?.hasExtra(BatterySnapshots.EXTRA_CHARGING_STATUS)
         val gauge = GaugeProfiles.byId(CapturePrefs.learnedGaugeId(this)) ?: host.gaugeProfile()
-        machine = SessionStateMachine(
+        val machine = SessionStateMachine(
             SamplerProfiles.forHost(
                 deviceKind = host.deviceKind,
                 gauge = gauge,
@@ -200,23 +242,22 @@ class RecordingService : Service() {
             ),
         )
         snapshots = BatterySnapshots(bm)
-        writer = RawLogWriter(logDir(this))
         eventLog = EventLog(logDir(this))
+        effects = EffectRunner(machine, RawLogWriter(logDir(this)), ports) { fx, e ->
+            Log.w(TAG, "capture effect failed: ${fx?.javaClass?.simpleName ?: "input"}", e)
+        }
         screenOn = pm.isInteractive
         pm.addThermalStatusListener(mainExecutor, thermalListener)
 
         inputPump = scope.launch {
-            for (input in inputs) {
-                try {
-                    execute(machine.on(input))
-                    if (input is CaptureInput.Tick) quiet.beat()
-                } catch (e: IOException) {
-                    Log.w(TAG, "capture effect failed", e)
-                }
-            }
+            for (input in inputs) effects.handle(input)
         }
 
         NotificationChannels.ensure(this)
+        // TRAP docs/recording-service-threading.md — watched before the first post reads the switch, on main
+        switchWatch = CapturePrefs.watchRecordEnabled(this) {
+            scope.launch(Dispatchers.IO) { postIdle(recaps.current) }
+        }
         poster.start(host.content(idleState()))
 
         registerReceiver(powerReceiver, IntentFilter().apply {
@@ -244,26 +285,17 @@ class RecordingService : Service() {
             }
         }
 
-        scope.launch {
-            CapturePrefs.recordEnabledFlow(this@RecordingService).drop(1).collect {
-                if (LiveFeed.state.value?.recording != true) {
-                    poster.post(host.content(idleState()), force = true)
-                }
-            }
-        }
-
         scope.launch(Dispatchers.IO) {
-            RawLogWriter.sessionFiles(logDir(this@RecordingService))
-                .lastOrNull()?.let { lastRecap = recapOf(it) }
-            if (LiveFeed.state.value?.recording != true) {
-                poster.post(host.content(idleState()), force = true)
-            }
+            val previous = recaps.previousLog(logDir(this@RecordingService))
+            postIdle(recaps.offer(NewestRecap.STARTUP, previous?.let(::recapOf)))
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        poster.close()
+        switchWatch?.invoke()
         val ticks = stopTicking()
         quietJob?.cancel()
         getSystemService(PowerManager::class.java).removeThermalStatusListener(thermalListener)
@@ -291,6 +323,7 @@ class RecordingService : Service() {
 
     private fun openSessionIfEnabled(t: Long, e: Long) {
         if (!CapturePrefs.recordEnabled(this)) return
+        recaps.opening(t)
         submit(CaptureInput.PowerConnected(t, e, host.chargeTargetLevel(), snapshots.lastSticky?.cycleCount))
         samplingMode = SamplingMode.TICK
         plugged = true
@@ -309,7 +342,7 @@ class RecordingService : Service() {
             while (isActive) {
                 val s = snapshots.sample(screenOn, hinge.latestDeg).copy(thermalStatus = thermalStatus)
                 submit(CaptureInput.Tick(s))
-                poster.post(host.content(recordingState(s)), force = first)
+                poster.post(host.content(recordingState(s)), force = first, superseded = { !plugged })
                 first = false
                 delay(tickMs)
             }
@@ -334,76 +367,23 @@ class RecordingService : Service() {
         return job
     }
 
-    private var gaugeProbe: GaugeScaleProbe? = null
-
-    private fun onProbeSample(sample: RawLine.Sample) {
-        val refined = gaugeProbe?.offer(sample) ?: return
-        CapturePrefs.setLearnedGaugeId(this, refined.id)
-        machine.refineGauge(refined)
-        try {
-            writer.append(RawLine.Event(
-                sample.t, sample.e, EventKinds.GAUGE_SCALE,
-                EventKinds.GAUGE_SCALE_DETAIL_KEY + refined.id,
-            ))
-        } catch (e: IOException) {
-            Log.w(TAG, "gauge-scale marker not written", e)
-        }
-        host.onGaugeRefined(refined)
+    // TRAP docs/recording-service-threading.md — dropped once a session opens, a recap is newer or the switch moved
+    private fun postIdle(read: NewestRecap.Read) {
+        val idle = idleState(read.recap)
+        poster.post(host.content(idle), force = true, superseded = {
+            plugged || !recaps.isNewest(read) || idle.recordEnabled != CapturePrefs.recordEnabled(this)
+        })
     }
 
-    private fun execute(effects: List<CaptureEffect>) {
-        for (fx in effects) when (fx) {
-            is CaptureEffect.OpenLog -> {
-                writer.open(fx.header)
-                LiveFeed.onOpen(fx.header.sessionStartWallClockMs)
-                gaugeProbe = GaugeScaleProbe(GaugeProfiles.byId(fx.header.gaugeProfileId) ?: host.gaugeProfile())
-            }
-            is CaptureEffect.Append -> {
-                writer.append(fx.line)
-                (fx.line as? RawLine.Sample)?.let { sample ->
-                    LiveFeed.onSample(sample)
-                    onProbeSample(sample)
-                }
-            }
-            is CaptureEffect.CloseLog -> {
-                val closedFile = writer.currentFile
-                writer.close()
-                LiveFeed.onClose()
-                if (closedFile != null) {
-                    scope.launch(Dispatchers.IO) {
-                        lastRecap = recapOf(closedFile)
-                        poster.post(host.content(idleState()), force = true)
-                    }
-                }
-            }
-            is CaptureEffect.LogEvent -> eventLog.append(fx.event)
-            is CaptureEffect.SetSampling -> {
-                samplingMode = fx.mode
-                val event = fx.mode == SamplingMode.EVENT
-                LiveFeed.onSampling(event)
-                mainHandler.post { if (event) stopTicking() else if (plugged) startTicking() }
-            }
-            CaptureEffect.AcquireWakeLock -> {
-                val pm = getSystemService(PowerManager::class.java)
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "chargelog:recording")
-                    .apply { setReferenceCounted(false); acquire(MAX_WAKELOCK_MS) }
-            }
-            CaptureEffect.ReleaseWakeLock -> {
-                wakeLock?.release()
-                wakeLock = null
-            }
-        }
-    }
-
-    private fun idleState(): RecorderState.Idle =
-        RecorderState.Idle(recap = lastRecap, recordEnabled = CapturePrefs.recordEnabled(this))
+    private fun idleState(recap: SessionRecap? = recaps.current.recap): RecorderState.Idle =
+        RecorderState.Idle(recap = recap, recordEnabled = CapturePrefs.recordEnabled(this))
 
     private fun recordingState(sample: RawLine.Sample): RecorderState.Recording {
         val snap = LiveFeed.state.value
         return RecorderState.Recording(
             sample = sample,
             sessionStartMs = if (snap?.recording == true) snap.sessionStartMs else null,
-            lastRecap = lastRecap,
+            lastRecap = recaps.current.recap,
             recentLevels = snap?.recentLevels ?: emptyList(),
         )
     }

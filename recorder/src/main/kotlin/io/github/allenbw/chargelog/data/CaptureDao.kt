@@ -20,6 +20,19 @@ interface CaptureDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSamples(samples: List<SampleEntity>)
 
+    /**
+     * Writes one session's row and its samples in a single transaction: the only way the
+     * projection writes a session ([Replay.reconcile], [Replay.projectAll], an import). A failure
+     * part way — a full disk, a crash — leaves the row the session had before, or none, never a
+     * finished row over part of its curve that no later reconcile would read again. A collector of
+     * [sessions] sees the row only once its samples are there.
+     */
+    @Transaction
+    suspend fun project(session: SessionEntity, samples: List<SampleEntity>) {
+        upsertSession(session)
+        upsertSamples(samples)
+    }
+
     @Query("SELECT * FROM sessions ORDER BY startedAtMs DESC")
     fun sessions(): Flow<List<SessionEntity>>
 

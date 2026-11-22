@@ -12,14 +12,18 @@ Notable changes to the ChargeLog recorder. Format loosely follows
 
 Three version numbers travel with this library.
 
-**The library's version is the app's.** Every ChargeLog release `X.Y.Z` is also a recorder
-release `X.Y.Z`: the section below is stamped as part of the app's release, and this repository
-carries the tag `vX.Y.Z` and a GitHub Release whose notes are that section, published by the same
-sync that carries it. A release with no recorder change still gets a section saying so, so the
-two numbers never drift. What a host compiles against is the `RecorderHost` seam and the public
-API of `capture/`, `data/`, and `measure/`; a change that makes a host change code is called out
-in its section. There is no published Maven artifact — consumers vendor the source or depend on
-the module directly — so the tag is the coordinate.
+**The library's version is the app's.** Every ChargeLog release `X.Y.Z` is also a recorder release
+`X.Y.Z`: the section below is stamped as part of the app's release, and this repository carries the
+tag `vX.Y.Z` and a GitHub Release whose notes are that section, published by the same sync that
+carries it. A release with no recorder change still gets a section saying so, so the two numbers
+never drift. A sync tags only the newest release it carries, and a tag is never added afterwards,
+so a release that was cut and superseded before the next sync has a section here and no tag: 0.4.0,
+0.6.0, 0.6.1 and 0.6.2 are such releases, and their changes are in the next tag (`v0.5.0` and
+`v0.7.0`). Sections before 0.4.0 predate the tags. A tag marks the tree its sync carried, which can
+include work still under Unreleased at the time; `v0.5.0` does. What a host compiles against is the
+`RecorderHost` seam and the public API of `capture/`, `data/`, and `measure/`; a change that makes
+a host change code is called out in its section. There is no published Maven artifact — consumers
+vendor the source or depend on the module directly — so the tag is the coordinate.
 
 **The NDJSON schema version** (`schema` in every session log's header, currently **2**) is a plain
 integer with its own contract, described in `docs/ndjson-format.md`: decoding is tolerant, so an
@@ -36,6 +40,201 @@ writes into each session header's `appVersion`. A fixture therefore records whic
 app produced it, which is why the field is there.
 
 ## [Unreleased]
+
+### Fixed
+
+- The record switch's idle post runs on `Dispatchers.IO`, as the recaps' posts already did, not
+  on `Dispatchers.Default`. It calls the host's `content`, and on a two-core device a slow
+  `content` beside a pump busy writing left a re-plugged session's first tick with no worker, so
+  its notification waited on the pump. Display only: `RecorderHost`, the NDJSON schema (2) and
+  every public signature are unchanged.
+- `LiveFeed.Snapshot.recentWatts` reads the current at the scale of the gauge heading the session,
+  and rescales when the recorder learns that gauge speaks mA mid-charge. It read every current as
+  µA, so on a milliamp phone or watch each figure was a thousand times low. No signature changes.
+- The sample host reads its live watts at the gauge's scale: `CapturePrefs.learnedGaugeId` (falling
+  back to `gaugeProfile()`) at start, then `onGaugeRefined`. It printed "Recording — 0.0 W" on a
+  milliamp phone. A host that renders a live sample's watts needs the same: the two-argument
+  `Units.watts` is for a current known to be µA, which a phone's often is not.
+
+## [1.0.0] — 2026-10-19
+
+1.0.0 is the app's open-beta number, not an API-stability promise: this library's version is the
+app's, so a change that makes a host change code can still come in any release, and its section
+says so.
+
+### Added
+
+- `CaptureDao.project(session, samples)`: one session's row and samples in a single transaction.
+  `Replay.reconcile`, `Replay.projectAll` and `Replay.ingestExternal` now write through it alone.
+  A default interface method, so a host's own `CaptureDao` fake inherits it.
+- `IngestReasons.TOO_LARGE`, for an import stream over 128 MiB or a log past `Replay.MAX_SAMPLES`
+  samples. A host that maps reasons to copy needs a line for it; until then its fallback shows.
+- `Replay.MAX_SAMPLES`: the most samples `Replay.parse` reads from one file, four days at one
+  sample a second, and `Replay.TooManySamples`, the `IOException` it throws past that. A host that
+  calls `parse` and catches `IOException` skips such a file as it skips an unreadable one; one that
+  has to say why catches `TooManySamples` first.
+- An `ingest_too_many_samples` event (`EventKinds.INGEST_TOO_MANY_SAMPLES`), so a session missing
+  for its size can be traced. The first projection pass in a process to refuse a file writes it,
+  and the refusal is remembered only while that process lives, so each app start that meets the
+  file writes it again.
+- `SettleDetector`'s `flatHoldMs` constructor parameter: how long a charge must sit with nothing
+  changing to settle as a hold, 30 minutes by default. A host that builds its own detector and
+  passes nothing gets the new rule below.
+
+### Changed
+
+- CI runs Android lint on the library (`./gradlew :recorder:lintDebug`), and three checks are
+  errors: `NewApi` (a call above `minSdk` 31 with no version check), `MissingPermission` and
+  `UnspecifiedRegisterReceiverFlag`. A pull request that adds one fails until it is guarded; run
+  the same task locally first (`BUILDING.md`). The library's own code had none.
+- The unit tests re-run when only a committed Room schema under `recorder/schemas/` changes. A
+  hand-edited schema used to leave them up to date, and the schema pin unrun.
+- The public `build` job installs its SDK packages with the runner's own `sdkmanager`.
+  `android-actions/setup-android`'s `sdkmanager tools` had stopped resolving, which left the job
+  red from the 2026-09-16 sync through `v0.7.0`.
+- A test task that hangs fails after 20 minutes instead of holding the build open.
+- The sample host's manifest names `dataExtractionRules` that exclude every domain from cloud
+  backup and device-to-device transfer, beside `allowBackup="false"`. From targetSdk 31 on,
+  Android ignores `allowBackup` for device-to-device transfer, which would carry `DeviceIdentity`'s
+  prefs file to a new phone. A host needs both attributes; `DeviceIdentity`'s KDoc now says so.
+  Host-side only: `RecorderHost`, the NDJSON schema (2) and the Room projection (6) are untouched.
+- The `FakeCaptureDao` test fixture behaves as Room does: samples are replaced by
+  `(sessionId, elapsedRealtimeMs)` instead of appended, `samples` comes back in elapsed order and
+  `sessions` newest first. A test that relied on duplicated samples or insertion order changes with
+  it. This changes neither `RecorderHost`, the NDJSON schema (2) nor the Room projection (6).
+
+### Fixed
+
+- A charge the device holds short of the user's target now settles. `SettleDetector` settles a
+  charge whose level, status, plug type and charging status have all stayed the same for 30
+  minutes, at any level and under any target, and resumes it on the first sample in which any of
+  them differs. A phone holding its charge below the target while still reporting it charging (an
+  OEM charge limit at 80–85 %, an Adaptive Charging hold under a 100 % target), or a watch holding
+  it there at `NOT_CHARGING`, met none of the three settle predicates, so it was sampled every
+  second until the unplug, holding the wake lock up to its three-hour safety timeout: 3,600 lines
+  an hour, and about four days of it passed `Replay.MAX_SAMPLES`. Now it is sampled on battery
+  broadcasts after the first half hour, as a full charge is. A normal charge is unchanged: no
+  level step in the recorder's captures passes 17 minutes, and it still settles two minutes into
+  `FULL`. A charge climbing slower than about 2 % an hour is taken for a hold, and is back on the
+  tick at its next level step. A
+  thermal pause longer than half an hour now settles too, and resumes when its status changes or
+  the level moves. The settle writes the same `capture_policy settled` line;
+  it can now come at any level, so `settled` no longer implies the charge reached its target, and
+  the samples after it arrive on battery broadcasts only; `RecorderHost`, the
+  NDJSON schema (2) and the Room projection (6) are untouched. Closing and reopening the log at a
+  size or age (rotating sessions) was considered and rejected: it bounds each file but not what is
+  written, and splits one plug-in into several sessions. Docs:
+  `docs/recording-service-threading.md`, "A hold below the target".
+- `RecordingService` no longer shows its idle notification over a charge it is recording. The idle
+  posts that follow a recap (the last session's, read at service start, and each closed session's)
+  and the record switch's looked whether a session was recording before building their content,
+  then posted without looking again. A plug-in that landed in between left the idle text over the
+  live session until the notification's five-second gate let a later sample through; on the
+  charger at service start that happened whenever the recap looked before the capture pump had
+  opened the session. They now look again inside the notification's lock, and are dropped once a
+  session is open. A sample's post is dropped the same way once its unplug has been seen, so a
+  plug-in unplugged within milliseconds no longer leaves the recording text over the idle
+  notification. A stopped service also posts nothing more: a recap still being read when the
+  service stopped used to post afterwards, an ordinary notification that no running service owned.
+  `RecorderHost`, the NDJSON schema (2) and the Room projection (6) are untouched. Docs:
+  `docs/recording-service-threading.md`, "One post at a time" and "Teardown".
+- `RecordingService`'s idle notification names the newest finished charge. Its recaps are read off
+  the main thread, one at service start (the newest log on disk) and one for each closed session,
+  and each used to replace the last when its read finished: a start-up read of a long log that
+  finished after a short charge had closed put the older charge back in the idle notification, and
+  in each recording notification's `lastRecap`, until the next close. A recap now ranks by the
+  order its session closed in, the start-up read below every close, and a read that ranks lower is
+  dropped. An idle post whose content was built before a newer recap was kept (a recap's, the
+  record switch's, the unplug's) is dropped too, inside the notification's lock, because the newer
+  recap's own post follows it. A closed charge whose log cannot be read still shows no recap, never
+  an older charge's. `RecorderHost`, the NDJSON schema (2) and the Room projection (6) are
+  untouched. Docs: `docs/recording-service-threading.md`, "Which recap the idle notification
+  names".
+- `RecordingService`'s start-up recap no longer reads the charge in progress. It read the newest log
+  in the directory, and on the charger (or after a plug-in that landed before the listing) that
+  could be the log the capture pump had just opened: a partial recap of the live charge, which the
+  unplug's idle notification then showed as the last charge until the closed charge's own recap
+  was read. The start-up recap now leaves out every log the service opened, by its file name,
+  recorded before the pump is asked to open it; each of those gets its own recap when it closes.
+  `RecorderHost`, the NDJSON schema (2) and the Room projection (6) are untouched. Docs:
+  `docs/recording-service-threading.md`, "Which recap the idle notification names".
+- `RecordingService`'s idle notification shows the record switch as it stands. An idle post read
+  the switch when it built its content and never looked again, so a recap's or the unplug's post
+  built just before the switch changed could land after the change's own post and put the old state
+  back until the next idle post. The service also followed the switch from a worker thread that
+  started listening after its first post, so a change made in between was never posted, and it
+  passed on only a new value, so a change and its reversal made off the main thread, both reported
+  after the reversal, posted nothing while a post built between them stood. An idle post is now
+  dropped, inside the notification's lock, once the switch no longer reads what it shows, and every
+  change of the switch, listened for from before the service's first post, launches a post built
+  after it, which lands in its place. A host whose `content` throws on one switch post loses that
+  post alone, and the next change posts again; in `v0.7.0` such a throw ended the process (below).
+  `CapturePrefs.recordEnabledFlow` is unchanged. `RecorderHost`, the NDJSON schema (2) and the
+  Room projection (6) are untouched. Docs: `docs/recording-service-threading.md`, "Which switch
+  state the idle notification shows".
+- A session's row and its samples are written together. They were two writes, row first, so a
+  crash or a full disk between them at the end of a recording left a `CLEAN` row over the one
+  sample projected while the charge was live, and nothing ever re-read that file: peak, energy,
+  phases and the curve came from one sample for good. Now a failed write leaves the row the session
+  had (`TRUNCATED`) or none, and the next `reconcile` projects the whole file. Docs:
+  `docs/ndjson-format.md`, "Writing the projection".
+- `Replay.reconcile` no longer throws a database error into its caller. A host runs it from a UI
+  effect at app open and at each recording's end, where a `SQLiteFullException` from a full disk
+  ended the process. Any `android.database.SQLException` now ends the pass: it is logged, and what
+  was not written waits for the next call. An `Error` still propagates. The `ingest_conflict` and
+  `ingest_invalid_id` event lines it writes are best-effort too
+  (`docs/traps/event-log-writes-are-best-effort.md`).
+- `Replay.ingestExternal` no longer throws a database error into its caller either. One before the
+  file lands refuses the import as `IO` and leaves nothing; one after it lands (a full disk) leaves
+  the import standing: `Imported` is returned, no row is written, and the next `reconcile` projects
+  the file. It used to throw from the host's UI coroutine and end the process.
+- `Replay.ingestExternal` stops copying at the first byte past 128 MiB (`TOO_LARGE`) or past a
+  64 KiB line (`NO_HEADER`), and leaves nothing in `incoming/`. It used to stage any stream whole,
+  then read a file with no newline into memory as one line, so a wrong pick could fill the disk or
+  end the process a recording shares. The figures come from two days at one line a second, every
+  line as wide as the widest line recorded (a header).
+- `Replay.parse` no longer holds a whole file in memory. It decoded every line of a session log and
+  then built every row from them, holding both at once, so a file of minimal sample lines near the
+  import's 128 MiB cap decoded into millions of each, in the process a recording shares, at app
+  open (`reconcile`) and at each recording's end (the recap read). Each line now becomes its row as
+  it is read, and a file past `Replay.MAX_SAMPLES` samples is refused (`Replay.TooManySamples`):
+  `reconcile` and `projectAll` skip it and leave it on disk, the recap shows nothing for it, and an
+  import refuses it as `TOO_LARGE`. The recorder's own log could reach the cap: a charge held short
+  of its target while the platform still reported it charging (an OEM charge limit) never settled
+  (it does now, above), so it was sampled nearly every second until the unplug, and about four days
+  of that crossed it. A log an older build wrote can still be past it. A row
+  projected before then keeps what it showed, and the file is noted in the event log and not read
+  again in that process while it only grows (one that gets shorter is read again); each app start
+  that meets it reads it once more, up to the cap, and notes it again. Host-side only:
+  `RecorderHost`, the NDJSON schema (2) and the Room projection (6) are untouched. Docs:
+  `docs/ndjson-format.md`, "Writing the projection".
+- A reverted entity change no longer leaves its Room schema export behind. Room never deletes an
+  export, the room3 plugin copied it back over the restored `schemas/<version>.json` on every
+  build, and the build cache kept it past a clean. The recorder's build empties the export before
+  KSP runs.
+- `RecordingService` no longer crashes its process when a session log is deleted, or cannot be
+  read, at the moment its recap is read. That happens at service start and at every session
+  close. The notification's recap is simply absent.
+- One capture effect that fails no longer skips the rest of its batch, and no longer ends the
+  process. An event-log write that failed at unplug (a full disk, a log directory that cannot be
+  written) used to skip the session's `session_end`, the log's close and the wakelock's release;
+  the next plug-in then threw `IllegalStateException` ("session log already open") on the input
+  pump and the process died, to be restarted into the same state. Every sample after a session log
+  that could not be created threw the same way ("no open session log"). Each effect now runs on
+  its own: an `Exception` is logged and the batch carries on, so a session is always closed and its
+  wakelock always released, and the next plug-in opens a new log. An `Error` still ends the
+  process. Docs: `docs/recording-service-threading.md`, "When an effect fails".
+- A host whose `RecorderHost.content` (or `build`, through the notification) throws on one of
+  `RecordingService`'s coroutines (the tick loop, the quiet watch, a record switch post, a recap's
+  read) no longer ends the process. The `Exception` is logged and ends that coroutine
+  alone: the session still records and still ends, and the quiet watch re-arms a tick loop ended
+  this way. An `Error` still ends the process, and so does a host that throws in a post made
+  outside any coroutine, on the main thread (the service's first post, a broadcast's post). Docs:
+  `docs/recording-service-threading.md`, "When anything else on the scope fails".
+- `RawLogWriter.open` is all or nothing: a header that cannot be written now leaves the writer
+  closed, rather than open on a file with no header, so the next `open` is not refused.
+  `append` with no log open still throws `IllegalStateException`, as before; the service no
+  longer lets it escape.
 
 ## [0.7.0] — 2026-10-14
 

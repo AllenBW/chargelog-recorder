@@ -3,6 +3,7 @@
 
 package io.github.allenbw.chargelog.data
 
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -46,5 +47,30 @@ class FakeCaptureDaoTest {
         dao.upsertSession(session(1, deviceId = "watch-1"))
         dao.upsertSession(session(2, deviceId = "watch-2"))
         assertEquals(0, dao.ownCompletedSessionCount("loc"))
+    }
+
+    private fun sample(sessionId: Long, e: Long, level: Int) = SampleEntity(
+        sessionId = sessionId, wallClockMs = e, elapsedRealtimeMs = e, currentRaw = null, chargeCounterRaw = null,
+        voltageRaw = null, voltageAgeMs = null, tempDeciC = null, level = level, status = null, plugged = null,
+        maxChargingCurrentRaw = null, maxChargingVoltageRaw = null, thermalStatus = null, screenOn = null, hingeDeg = null,
+    )
+
+    @Test
+    fun `samples are replaced by session and elapsed time, as Room's key does`() = runBlocking {
+        val dao = FakeCaptureDao()
+        dao.upsertSamples(listOf(sample(1, 10, 50), sample(1, 20, 51)))
+        dao.upsertSamples(listOf(sample(1, 10, 60), sample(1, 20, 61), sample(1, 30, 62)))
+        assertEquals(listOf(60, 61, 62), dao.samples(1).map { it.level })
+    }
+
+    @Test
+    fun `samples come back in elapsed order and sessions newest first, as the SQL orders them`() = runBlocking {
+        val dao = FakeCaptureDao()
+        dao.upsertSamples(listOf(sample(1, 30, 3), sample(1, 10, 1), sample(1, 20, 2)))
+        dao.upsertSession(session(100))
+        dao.upsertSession(session(300))
+        dao.upsertSession(session(200))
+        assertEquals(listOf(10L, 20L, 30L), dao.samples(1).map { it.elapsedRealtimeMs })
+        assertEquals(listOf(300L, 200L, 100L), dao.sessions().first().map { it.id })
     }
 }

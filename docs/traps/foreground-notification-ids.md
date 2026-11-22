@@ -43,4 +43,4 @@ On a phone this costs one silent shade re-post per plug and unplug. That is the 
   the content it is handed, not this constant.
 - A host that posts its own notification under one of these two ids will have it cancelled.
 
-Fixed in PR #106; the id pair and the no-`stopForeground` rule are the fix.
+Fixed on 2026-09-02; the id pair and the no-`stopForeground` rule are the fix.

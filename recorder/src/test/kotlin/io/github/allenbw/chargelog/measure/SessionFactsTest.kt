@@ -96,6 +96,14 @@ class SessionFactsTest {
     }
 
     @Test
+    fun `energyAh keeps a sub-amp-hour charge's fraction and its direction`() {
+        val charged = sessionFacts(session(startChargeCounterRaw = 2_500_000L, endChargeCounterRaw = 3_250_000L), emptyList())
+        assertEquals(0.75, charged.energyAh!!, 1e-9)
+        val drained = sessionFacts(session(startChargeCounterRaw = 3_250_000L, endChargeCounterRaw = 3_000_000L), emptyList())
+        assertEquals(-0.25, drained.energyAh!!, 1e-9)
+    }
+
+    @Test
     fun `energyAh is null when startChargeCounterRaw is null`() {
         val facts = sessionFacts(
             session(startChargeCounterRaw = null, endChargeCounterRaw = 3_100_000L),

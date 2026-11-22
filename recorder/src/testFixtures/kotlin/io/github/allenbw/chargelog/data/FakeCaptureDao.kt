@@ -24,14 +24,19 @@ class FakeCaptureDao : CaptureDao {
     override suspend fun upsertSamples(samples: List<SampleEntity>) {
         upsertSamplesCalls++
         samples.groupBy { it.sessionId }.forEach { (sid, list) ->
-            samplesBySession.getOrPut(sid) { mutableListOf() }.addAll(list)
+            val held = samplesBySession.getOrPut(sid) { mutableListOf() }
+            val byKey = held.associateByTo(LinkedHashMap()) { it.elapsedRealtimeMs }
+            list.forEach { byKey[it.elapsedRealtimeMs] = it }
+            held.clear()
+            held.addAll(byKey.values.sortedBy { it.elapsedRealtimeMs })
         }
     }
 
-    override fun sessions(): Flow<List<SessionEntity>> = flowOf(sessions.values.toList())
+    override fun sessions(): Flow<List<SessionEntity>> =
+        flowOf(sessions.values.sortedByDescending { it.startedAtMs })
 
     override suspend fun samples(sessionId: Long): List<SampleEntity> =
-        samplesBySession[sessionId].orEmpty()
+        samplesBySession[sessionId].orEmpty().sortedBy { it.elapsedRealtimeMs }
 
     override suspend fun clearSessions() { sessions.clear() }
     override suspend fun clearSamples() { samplesBySession.clear() }

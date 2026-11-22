@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 BluffWorks LLC
 // SPDX-License-Identifier: GPL-3.0-only
 
+import java.time.Duration
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
@@ -39,6 +41,9 @@ android {
     lint {
         ignoreTestSources = true
         ignoreTestFixturesSources = true
+        // minSdk 31 admits Android 12 and 13, where an unguarded newer call is a NoSuchMethodError
+        // in the service on every plug-in. These three fail the build however a default moves.
+        fatal += setOf("NewApi", "MissingPermission", "UnspecifiedRegisterReceiverFlag")
     }
 }
 
@@ -48,6 +53,28 @@ kotlin {
 
 room3 {
     schemaDirectory("$projectDir/schemas")
+}
+
+// Room exports a schema only when it differs from the committed one and never deletes an export,
+// so a reverted entity change left its export behind, the room3 plugin copied it back over the
+// restored schemas/<version>.json on every build, and the build cache kept it past a clean.
+// Emptying the export before KSP runs makes every export this run's own. docs/ndjson-format.md,
+// "Writing the projection".
+tasks.named { it.startsWith("ksp") }.configureEach {
+    val export = layout.buildDirectory.dir("intermediates/room/schemas/$name")
+    doFirst { export.get().asFile.listFiles()?.forEach { it.deleteRecursively() } }
+}
+
+// ChargeLogDbSchemaPinTest reads the committed schemas, which no compile task hashes for the tests:
+// without this, a hand-edited schemas/6.json alone left the tests UP-TO-DATE and the pin unrun.
+tasks.withType<Test>().configureEach {
+    inputs.dir("schemas").withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("roomSchemas")
+}
+
+// A test that hangs fails its task after 20 minutes instead of holding the build open. The whole
+// suite runs in seconds; the margin is for a loaded machine, not for any test that needs it.
+tasks.withType<Test>().configureEach {
+    timeout.set(Duration.ofMinutes(20))
 }
 
 dependencies {

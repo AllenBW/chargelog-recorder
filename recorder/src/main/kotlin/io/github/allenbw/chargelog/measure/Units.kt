@@ -12,15 +12,16 @@ import kotlin.math.abs
  */
 object Units {
     /** Watts from a raw µA current and a raw mV voltage; sign-insensitive; null if either is
-     *  missing. */
+     *  missing. Only for a current KNOWN to be µA: a gauge's raw current takes the three-argument
+     *  form with its [GaugeProfile.currentScale], since many phones report mA. */
     fun watts(currentRaw: Long?, voltageRawMv: Int?): Double? {
         val ua = currentRaw ?: return null
         val mv = voltageRawMv ?: return null
         return abs(ua) / 1_000_000.0 * (mv / 1_000.0)
     }
 
-    /** [watts] for a gauge whose raw current is in [scale] units; the two-argument form is the
-     *  µA convention a phone gauge uses and stays byte-for-byte what it was. */
+    /** [watts] for a gauge whose raw current is in [scale] units — the form for any gauge's
+     *  reading. [CurrentScale.MICRO_AMP] gives exactly the two-argument form. */
     fun watts(currentRaw: Long?, voltageRawMv: Int?, scale: CurrentScale): Double? {
         val raw = currentRaw ?: return null
         val mv = voltageRawMv ?: return null

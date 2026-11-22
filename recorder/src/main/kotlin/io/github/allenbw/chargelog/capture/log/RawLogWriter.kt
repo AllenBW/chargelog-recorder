@@ -4,6 +4,9 @@
 package io.github.allenbw.chargelog.capture.log
 
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
 
 /**
  * Append-only session log: one file per session, header first, one NDJSON
@@ -18,7 +21,13 @@ import java.io.File
  */
 class RawLogWriter(private val dir: File) {
 
-    private var stream: java.io.FileOutputStream? = null
+    private var openStream: (File) -> OutputStream = { FileOutputStream(it, true) }
+
+    internal constructor(dir: File, openStream: (File) -> OutputStream) : this(dir) {
+        this.openStream = openStream
+    }
+
+    private var stream: OutputStream? = null
     private var writer: java.io.Writer? = null
     var currentFile: File? = null
         private set
@@ -56,15 +65,28 @@ class RawLogWriter(private val dir: File) {
             dir.listFiles { f -> isSessionFile(f.name) }?.sortedBy { it.name } ?: emptyList()
     }
 
+    /**
+     * Opens the log for the session [header] starts and writes [header] as its first line.
+     *
+     * All or nothing: when the header cannot be written the writer is closed again before the
+     * exception leaves, so a failed open never strands an open writer that the next [open] would
+     * refuse. Opening while a log is already open is a caller error and throws
+     * [IllegalStateException]; so does [append] with no log open.
+     */
     fun open(header: RawLine.Header): File {
         check(writer == null) { "session log already open: ${currentFile?.name}" }
         dir.mkdirs()
         val f = File(dir, sessionFileName(header.sessionStartWallClockMs))
-        val s = java.io.FileOutputStream(f, true)
+        val s = openStream(f)
         stream = s
         writer = s.bufferedWriter()
         currentFile = f
-        append(header)
+        try {
+            append(header)
+        } catch (e: IOException) {
+            close()
+            throw e
+        }
         return f
     }
 
@@ -92,7 +114,7 @@ class RawLogWriter(private val dir: File) {
             writer?.flush()
             sync()
             writer?.close()
-        } catch (_: java.io.IOException) {
+        } catch (_: IOException) {
         } finally {
             writer = null
             stream = null
@@ -101,7 +123,7 @@ class RawLogWriter(private val dir: File) {
     }
 
     private fun sync() {
-        try { stream?.fd?.sync() } catch (_: java.io.IOException) { }
+        try { (stream as? FileOutputStream)?.fd?.sync() } catch (_: IOException) { }
     }
 }
 

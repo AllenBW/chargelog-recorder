@@ -74,6 +74,31 @@ class PhoneScaleEvidenceTest {
         assertNull(PhoneScaleEvidence().feed(rows))
     }
 
+    private fun riseAfter(steps: Int) = (0..steps).map { row(it, 2_000L, if (it < steps) 40 else 40 + PhoneScaleEvidence.MIN_LEVEL_RISE) }
+
+    @Test fun `a rise that delivered just under a MARGINth of what it needs proves milliamps`() {
+        assertEquals(true, PhoneScaleEvidence().feed(riseAfter(899)))
+        assertTrue(PhoneScaleEvidence.speaksMilliAmps(riseAfter(899)))
+    }
+
+    @Test fun `a rise that delivered exactly or just over a MARGINth of what it needs proves nothing`() {
+        assertNull(PhoneScaleEvidence().feed(riseAfter(900)))
+        assertNull(PhoneScaleEvidence().feed(riseAfter(901)))
+        assertFalse(PhoneScaleEvidence.speaksMilliAmps(riseAfter(901)))
+    }
+
+    private fun fourPointRiseAfter(steps: Int) = (0..steps).map {
+        row(it, -2_500L, if (it < steps) 60 else 64, stepMs = 3_000L)
+    }
+
+    @Test fun `a four-point rise on a negative current proves milliamps only below a MARGINth of what it needs`() {
+        assertEquals("14.98 mAh x MARGIN against 15 needed", true, PhoneScaleEvidence().feed(fourPointRiseAfter(719)))
+        assertNull("exactly 15 mAh x MARGIN against 15 needed", PhoneScaleEvidence().feed(fourPointRiseAfter(720)))
+        assertNull("15.02 mAh x MARGIN against 15 needed", PhoneScaleEvidence().feed(fourPointRiseAfter(721)))
+        assertTrue(PhoneScaleEvidence.speaksMilliAmps(fourPointRiseAfter(719)))
+        assertFalse(PhoneScaleEvidence.speaksMilliAmps(fourPointRiseAfter(720)))
+    }
+
     @Test fun `every real microamp phone recording in the corpus reads as microamps`() {
         val phones = listOf(
             "blip.ndjson", "session-1787605010301.ndjson", "session-1787606163594.ndjson",

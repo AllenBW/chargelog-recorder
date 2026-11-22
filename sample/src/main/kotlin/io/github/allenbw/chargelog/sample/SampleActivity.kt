@@ -143,7 +143,8 @@ private fun liveLine(context: Context, snapshot: LiveFeed.Snapshot?): String {
     val unknown = context.getString(R.string.unknown)
     return context.getString(
         R.string.live_recording,
-        Units.watts(sample.currentRaw, sample.voltageRaw)?.let(::format1) ?: unknown,
+        Units.watts(sample.currentRaw, sample.voltageRaw, (context.applicationContext as SampleApp).currentScale)
+            ?.let(::format1) ?: unknown,
         sample.level?.toString() ?: unknown,
         chargeSourceOf(sample.plugged).name,
     )

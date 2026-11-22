@@ -11,9 +11,9 @@ Reproducibility matters here; these versions are exact and match the ChargeLog a
 | Tool | Version |
 |---|---|
 | JDK | 17 (any vendor; CI uses Temurin 17) |
-| Gradle | 9.5.0 (wrapper, sha-pinned — always use `./gradlew`) |
-| Android Gradle Plugin | 9.3.0 (built-in Kotlin — `org.jetbrains.kotlin.android` is deliberately absent) |
-| Kotlin / Compose compiler | 2.4.10 |
+| Gradle | 9.8.2 (wrapper, sha-pinned — always use `./gradlew`) |
+| Android Gradle Plugin | 9.4.1 (built-in Kotlin — `org.jetbrains.kotlin.android` is deliberately absent) |
+| Kotlin / Compose compiler | 2.4.21 |
 | compileSdk / minSdk | 37 / 31 |
 | SDK build-tools | 36.0.0 |
 
@@ -52,6 +52,9 @@ service; no resources, no Compose) and `:sample` (a minimal Compose app that imp
 
 Build the sample: `./gradlew :sample:assembleDebug`
 Library unit tests (no device): `./gradlew :recorder:testDebugUnitTest`
+Lint: `./gradlew :recorder:lintDebug` (`NewApi`, `MissingPermission` and
+`UnspecifiedRegisterReceiverFlag` fail it: `minSdk` is 31, and an unguarded newer call is a crash
+on Android 12 and 13)
 Device tests: `./gradlew :recorder:connectedDebugAndroidTest`
 
 ## Pulling a session log

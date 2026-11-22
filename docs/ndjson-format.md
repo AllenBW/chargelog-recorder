@@ -76,6 +76,76 @@ row. `Replay` never merges them and never lets the order a directory happens to 
   and `Replay.deleteCollisionHidden` deletes them under the projection's lock without touching
   any row, so a host can offer to clear them.
 
+### Writing the projection
+
+- **A session is written whole or not at all.** `CaptureDao.project` writes the row and every
+  sample in one transaction; `reconcile`, `projectAll` and an import use nothing else. Until
+  2026-10-17 the row went first and the samples in a second write, so a crash or a full disk in
+  between left a `CLEAN` row over the one sample projected while the charge was live, and
+  `reconcile` never reads a `CLEAN` row's file again. A failure now leaves the row the session had
+  before (`TRUNCATED`, which the next pass re-reads) or none (which it reads as new).
+- **A database error ends a `reconcile` pass, not the process.** Hosts run it from a UI effect at
+  app open and at every recording's end. A `SQLiteFullException`, or any other
+  `android.database.SQLException`, is logged and the pass stops; every file it did not write keeps
+  the row it had, or none, for the next call to finish. An `Error` still propagates. An import
+  survives one too: a database error before the file lands refuses it as `IO` and leaves nothing;
+  one after it lands leaves the import standing (`Imported`, with no row yet), and the next
+  `reconcile` projects it, as it would any file it has not seen. Only `projectAll`, a manual
+  rebuild, still throws.
+- **An import is bounded while it is copied.** `ingestExternal` stops reading at the first byte
+  past 128 MiB (`TOO_LARGE`) or past a 64 KiB line (`NO_HEADER`: no session log has one), and
+  leaves nothing in `incoming/`. The cap comes from recorded logs: the widest line in any of them
+  is 506 bytes (a phone's header; no sample line has passed 327), so two days at one line a
+  second, every line that wide, is about 87 MB, and 128 MiB leaves half again on top. The line cap
+  is over a hundred times that widest line. `IngestTest` holds both caps to the same rule against
+  the widest line in this repository's corpus, so a fixture too wide for the cap fails it.
+  Before, a wrong pick (a
+  video, a file with no newline) was staged whole on internal storage and could be read into
+  memory as one line, beside a recording in the same process.
+- **A file past `Replay.MAX_SAMPLES` samples is not projected.** `Replay.parse` reads at most four
+  days at one sample a second (345,600 samples, twice the two days the import cap above was sized
+  for) and throws `Replay.TooManySamples` past that. It is an `IOException`, so every caller that
+  skips an unreadable file skips this one: `reconcile` and `projectAll` leave it on disk and the
+  recap shows nothing for it. An import catches it first and refuses the file as `TOO_LARGE`, the
+  reason a stream past 128 MiB gets, leaving nothing behind (`IngestTest`). Each line becomes its
+  row as it is read, so a parse holds one list of rows and stops at the first sample past the cap.
+  Until 2026-10-17 it held every decoded line and then every row of the file at once, so a 128 MiB
+  file of minimal sample lines, which the import admits, decoded into millions of each in the
+  process a recording shares, at app open and at every recording's end. `ReplaySampleCapTest`
+  holds the cap and the boundary.
+- **The recorder's own log can reach the cap.** It samples no faster than once a second, and until
+  a charge settles it persists nearly every tick (the current moves on almost every one), while a
+  session lasts until the unplug. Until 2026-10-18 a charge held short of its target while the
+  platform still reported `CHARGING` (an OEM charge limit, say) never settled, and a device left on
+  such a charger for about four days wrote a log past the cap. Such a charge now settles after half
+  an hour with nothing changing (`recording-service-threading.md`, "A hold below the target"), but
+  a session whose level, status or plug keeps changing for four days still crosses it, and a log an
+  older build wrote can already have. A row `reconcile` wrote while the log was under the cap stays
+  as it left it, `TRUNCATED`, so the charge shows as far as it got then; a log first met past the
+  cap has no row, and neither has one after a `projectAll` rebuild, which clears every row before it
+  reads. The first pass in a process to meet the file writes an `ingest_too_many_samples` event
+  (`detail` names the directory, the file and the cap), and since a log only grows, neither pass
+  reads that file again in the same process unless it gets shorter: one that does is read again,
+  and projected if it is now under the cap. The refusal is remembered only in memory, so each app
+  start that meets the file reads it once more, up to the cap, refuses it again and writes another
+  event: one line per process that meets it, not one per file. `ReplaySampleCapTest` holds the row
+  that is kept, the single note, and the read after the file shrinks.
+- **An entity change bumps `ChargeLogDb.version`.** Room refuses to open a database whose version
+  matches but whose identity hash does not ("Room cannot verify the data integrity"), and the
+  destructive fallback applies only across versions, so a column added without a bump crashes
+  every upgraded install at its first query. KSP rewrites `schemas/<version>.json` without a word
+  when an entity changes, so `ChargeLogDbSchemaPinTest` pins each released version's hash as a
+  literal: a rewritten schema fails it with "bump ChargeLogDb.version", and a new version's hash is
+  added there by hand. Room writes an export only when it differs from the committed schema and
+  never deletes one, and the room3 plugin copies every export over `schemas/` on each build, so a
+  reverted entity change used to leave its export behind: the restored `6.json` came back changed
+  on every build, and the build cache kept it past a clean. The recorder's build now empties the
+  export before KSP runs, so restoring the file and reverting the entity (or bumping the version)
+  is enough; should a restored file still come back changed, `./gradlew :recorder:clean` and one
+  build with `--no-build-cache` clear it. The drop from version 5 to 6, and the reconcile that
+  brings back every session under its own id, are tested downstream, in the app that hosts this
+  recorder, on a populated version 5 database.
+
 ## Sample (`"y":"s"`) — zero or more per session
 
 ```json
@@ -129,8 +199,14 @@ and the recorder stays down until the app is opened), `service_start`,
 charging attribution changed — `detail` is `"status=N"`, the same numbering as the sample field;
 one line per change, so an Adaptive hold or a thermal pause is findable without scanning samples),
 `ingest_conflict` (a session file's id collided with a different device's on a projection
-pass — skipped, never merged; see "One id, one projected session" below), `capture_policy` (the
-sampling policy changed without closing the session: `detail` is `"settled"` or `"resumed"`),
+pass — skipped, never merged; see "One id, one projected session" below),
+`ingest_too_many_samples` (a session file held more than `Replay.MAX_SAMPLES` samples and a
+projection pass refused it; a row projected while the file was under the cap is kept as it was;
+written once per process while the file only grows, since later passes skip it unread until it
+gets shorter, and so again at each app start; see "Writing the projection" above),
+`capture_policy` (the sampling policy changed without closing the session: `detail` is
+`"settled"` or `"resumed"`; a charge settled by half an hour with nothing changing writes the
+same `"settled"` as a full one),
 `gauge_scale` (the recorder resolved a gauge's current SCALE from this session's own samples —
 `detail` is `"gaugeProfileId=gauge-unknown-ma"` on a watch, `"gaugeProfileId=gauge-phone-ma"` on a
 phone; see below), and `cadence` (the effective sample interval from
